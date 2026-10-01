@@ -84,9 +84,7 @@ kubectl -n ai-platform logs deploy/otel-collector --tail=200
 
 ## Current status
 
-- Stage 1 scaffold: ready
-- Stage 1 verification on this machine: pending
+- Stage 1: done (smoke test passing with Groq `gpt-oss-20b`)
+- Stage 2: planning - see [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md)
 
-## Next stage
-
-- Stage 2: synthetic insurance document ingestion and RAG pipeline.
+Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).

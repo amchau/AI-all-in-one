@@ -11,5 +11,14 @@ data:
           model: groq/openai/gpt-oss-20b
           api_key: os.environ/GROQ_API_KEY
 
+      # OpenRouter is OpenAI-compatible; the first "openai/" selects LiteLLM's provider.
+      - model_name: embed-small
+        litellm_params:
+          model: openai/openai/text-embedding-3-small
+          api_base: https://openrouter.ai/api/v1
+          api_key: os.environ/OPENROUTER_API_KEY
+        model_info:
+          mode: embedding
+
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY

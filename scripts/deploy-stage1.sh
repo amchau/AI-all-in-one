@@ -13,7 +13,7 @@ load_env_file() {
     value="${value%\"}"
     value="${value#\"}"
     case "${key}" in
-      GROQ_API_KEY|LITELLM_MASTER_KEY|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|MINIO_ROOT_USER|MINIO_ROOT_PASSWORD|MINIO_ACCESS_KEY|MINIO_SECRET_KEY)
+      GROQ_API_KEY|OPENROUTER_API_KEY|LITELLM_MASTER_KEY|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|MINIO_ROOT_USER|MINIO_ROOT_PASSWORD|MINIO_ACCESS_KEY|MINIO_SECRET_KEY)
         export "${key}=${value}"
         ;;
     esac
@@ -23,6 +23,7 @@ load_env_file() {
 load_env_file .env
 
 : "${GROQ_API_KEY:=set-me}"
+: "${OPENROUTER_API_KEY:=set-me}"
 : "${LITELLM_MASTER_KEY:=set-me}"
 : "${POSTGRES_DB:=platform}"
 : "${POSTGRES_USER:=app}"
@@ -44,6 +45,7 @@ assert_not_placeholder() {
 }
 
 assert_not_placeholder "GROQ_API_KEY" "${GROQ_API_KEY}"
+assert_not_placeholder "OPENROUTER_API_KEY" "${OPENROUTER_API_KEY}"
 assert_not_placeholder "LITELLM_MASTER_KEY" "${LITELLM_MASTER_KEY}"
 assert_not_placeholder "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
 assert_not_placeholder "MINIO_ROOT_PASSWORD" "${MINIO_ROOT_PASSWORD}"
@@ -53,6 +55,7 @@ kubectl get ns ai-platform >/dev/null 2>&1 || kubectl create ns ai-platform
 
 kubectl -n ai-platform create secret generic stage1-secrets \
   --from-literal=GROQ_API_KEY="${GROQ_API_KEY}" \
+  --from-literal=OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
   --from-literal=LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY}" \
   --from-literal=POSTGRES_DB="${POSTGRES_DB}" \
   --from-literal=POSTGRES_USER="${POSTGRES_USER}" \
@@ -73,5 +76,6 @@ kubectl -n ai-platform rollout status deploy/minio --timeout=180s
 kubectl -n ai-platform rollout status deploy/litellm --timeout=180s
 kubectl -n ai-platform rollout status deploy/otel-collector --timeout=180s
 kubectl -n ai-platform rollout status deploy/ai-api --timeout=180s
+kubectl -n ai-platform rollout status deploy/reranker --timeout=900s
 
 kubectl -n ai-platform get pods

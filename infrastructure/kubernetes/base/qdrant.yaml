@@ -5,6 +5,8 @@ metadata:
   namespace: ai-platform
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: qdrant
@@ -42,7 +44,8 @@ spec:
             periodSeconds: 10
       volumes:
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: qdrant-data
 ---
 apiVersion: v1
 kind: Service

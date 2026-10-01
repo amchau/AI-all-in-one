@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reranker
+  namespace: ai-platform
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: reranker
+  template:
+    metadata:
+      labels:
+        app: reranker
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: reranker
+          image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+          args:
+            - --model-id
+            - BAAI/bge-reranker-base
+            - --port
+            - "8080"
+            - --max-client-batch-size
+            - "64"
+          env:
+            - name: HF_HOME
+              value: /data
+            - name: HUGGINGFACE_HUB_CACHE
+              value: /data
+          ports:
+            - containerPort: 8080
+          # ONNX runtime peaks ~3 GB loading the fp32 model; 2Gi was OOMKilled.
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1536Mi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: cache
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          # First start downloads ~1.1 GB of model weights.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 20
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: reranker-cache
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reranker
+  namespace: ai-platform
+spec:
+  selector:
+    app: reranker
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

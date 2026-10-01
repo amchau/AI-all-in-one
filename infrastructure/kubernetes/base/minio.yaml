@@ -5,6 +5,8 @@ metadata:
   namespace: ai-platform
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: minio
@@ -64,7 +66,8 @@ spec:
             periodSeconds: 10
       volumes:
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: minio-data
         - name: tmp
           emptyDir: {}
 ---

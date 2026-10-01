@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: ai-platform
 resources:
   - namespace.yaml
+  - pvc.yaml
   - postgres.yaml
   - qdrant.yaml
   - minio.yaml
@@ -11,3 +12,4 @@ resources:
   - otel-collector-configmap.yaml
   - otel-collector.yaml
   - ai-api.yaml
+  - reranker.yaml

@@ -42,6 +42,5 @@ Tradeoffs:
 
 ## Follow-up ADRs
 
-- ADR-002 vector strategy (Qdrant vs pgvector)
-- ADR-003 workflow engine (Temporal introduction in Stage 7)
-- ADR-004 observability stack expansion (Prometheus/Grafana/Loki/Tempo)
+See ADR index in [ROADMAP.md](../ROADMAP.md): ADR-002 vector store, ADR-003 embeddings/reranking,
+ADR-004 chunking, ADR-007 workflow engine, ADR-008 observability expansion.
