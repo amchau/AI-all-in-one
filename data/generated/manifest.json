@@ -1,0 +1,133 @@
+{
+  "documents": [
+    {
+      "metadata": {
+        "acl": "internal",
+        "doc_id": "END-HOME-002-FLOOD-EXT-01",
+        "doc_type": "endorsement",
+        "effective_date": "2025-01-01",
+        "policy_id": "HOME-002",
+        "product": "home",
+        "title": "Home Flood Extension Endorsement",
+        "version": "1.0"
+      },
+      "pdf": "END-HOME-002-FLOOD-EXT-01.pdf",
+      "pdf_sha256": "7a34bcebcc158ce910be2d2c5fa721dabab7a7dbc9c161f5a0ed8e6bb4543f2c",
+      "source": "endorsements/home-HOME-002-flood-extension-01.md",
+      "source_sha256": "6c04e05c8915f3bfb011cbaffd7ee5362fdca61724fa3584a1ec1768c4fd0c84"
+    },
+    {
+      "metadata": {
+        "acl": "internal",
+        "doc_id": "END-HOME-002-WATER-LIMIT-02",
+        "doc_type": "endorsement",
+        "effective_date": "2025-02-01",
+        "policy_id": "HOME-002",
+        "product": "home",
+        "title": "Home Water Damage Clarification Endorsement",
+        "version": "1.0"
+      },
+      "pdf": "END-HOME-002-WATER-LIMIT-02.pdf",
+      "pdf_sha256": "1dcc442ffae2bf65f1e58f7150a676c177172c52f3ab50194abfe0a6908c19c1",
+      "source": "endorsements/home-HOME-002-water-limit-02.md",
+      "source_sha256": "1434c214ab21e4f885aac2fcc49e84976b38f53b46287221de7ee1aaa611956e"
+    },
+    {
+      "metadata": {
+        "acl": "internal",
+        "doc_id": "POL-COMM-001-v1",
+        "doc_type": "policy",
+        "effective_date": "2025-04-01",
+        "policy_id": "COMM-001",
+        "product": "small_commercial",
+        "title": "Northstar Small Business Property Policy Wording",
+        "version": "1.0"
+      },
+      "pdf": "POL-COMM-001-v1.pdf",
+      "pdf_sha256": "e98d508222949c74b26eb9a683f062133cfb9981a458a520e973d4bfdf1e3b56",
+      "source": "policies/commercial-COMM-001-v1.md",
+      "source_sha256": "19439137ffbafc68e02347ef97c7e647551289d03d6f8fd02b571b78b83b0e61"
+    },
+    {
+      "metadata": {
+        "acl": "internal",
+        "doc_id": "POL-HOME-002-v2",
+        "doc_type": "policy",
+        "effective_date": "2025-01-01",
+        "policy_id": "HOME-002",
+        "product": "home",
+        "title": "Northstar Home Policy Wording",
+        "version": "2.0"
+      },
+      "pdf": "POL-HOME-002-v2.pdf",
+      "pdf_sha256": "a96ccb7b736a25c1f5d5e2ea52c9b81e1400232bbcf2f2a3229897e1b1e094f4",
+      "source": "policies/home-HOME-002-v2.md",
+      "source_sha256": "b5f5d7933f8f13a4cd68681b726712ed8fcf4223e2dd2c75024b4fc2d693fec5"
+    },
+    {
+      "metadata": {
+        "acl": "internal",
+        "doc_id": "POL-MOTOR-001-v1",
+        "doc_type": "policy",
+        "effective_date": "2025-03-01",
+        "policy_id": "MOTOR-001",
+        "product": "motor",
+        "title": "Northstar Motor Policy Wording",
+        "version": "1.0"
+      },
+      "pdf": "POL-MOTOR-001-v1.pdf",
+      "pdf_sha256": "c9dbc1ab64fc3217fbf62b83daab24fd11d93b77fe6d51e1da266cf8f4ced9bb",
+      "source": "policies/motor-MOTOR-001-v1.md",
+      "source_sha256": "de0408fd9a02fb42a983d30a9e28f01123cd90b81a167e359f58915720d86a8e"
+    },
+    {
+      "metadata": {
+        "acl": "internal",
+        "doc_id": "PROC-CLAIMS-FAIR-HANDLING-01",
+        "doc_type": "procedure",
+        "effective_date": "2025-01-01",
+        "policy_id": null,
+        "product": "all",
+        "title": "Claims Fair Handling and Escalation Procedure",
+        "version": "1.0"
+      },
+      "pdf": "PROC-CLAIMS-FAIR-HANDLING-01.pdf",
+      "pdf_sha256": "5124cda6cf4e4d556a382a6574ee9c9fb588ef87d3f0af654c497861adfcd4f3",
+      "source": "procedures/claims-fair-handling-procedure.md",
+      "source_sha256": "5f26a106b0d434904439c0000be9759f1dd33651b72c7e3ba2c199dd6a495ec0"
+    },
+    {
+      "metadata": {
+        "acl": "internal",
+        "doc_id": "PROC-HOME-WATER-EVIDENCE-01",
+        "doc_type": "procedure",
+        "effective_date": "2025-01-01",
+        "policy_id": "HOME-002",
+        "product": "home",
+        "title": "Home Water Damage Evidence Procedure",
+        "version": "1.0"
+      },
+      "pdf": "PROC-HOME-WATER-EVIDENCE-01.pdf",
+      "pdf_sha256": "c577a055dea60cfdd1f33a6d964a16931103933d31bbd6941ba61ec07087b097",
+      "source": "procedures/home-water-damage-evidence.md",
+      "source_sha256": "9d69467d99c454680987ad4f0e0b844114e3f6f6b589000f3d524b9422857708"
+    },
+    {
+      "metadata": {
+        "acl": "internal",
+        "doc_id": "REG-CLAIMS-HANDLING-SYNTH-01",
+        "doc_type": "regulation",
+        "effective_date": "2026-01-01",
+        "policy_id": null,
+        "product": "all",
+        "title": "Synthetic Claims Handling Principles",
+        "version": "2026-synthetic-1"
+      },
+      "pdf": "REG-CLAIMS-HANDLING-SYNTH-01.pdf",
+      "pdf_sha256": "a113150a9086ba94d3a110b690a69389e8f14af4c94b3b49763a9f8394b0a38e",
+      "source": "regulations/claims-handling-principles-synthetic.md",
+      "source_sha256": "9c07611683459e8e9d3ac019dfc84c1883c4328b6d3533bd82817e56757f59da"
+    }
+  ],
+  "schema_version": 1
+}

@@ -1,6 +1,6 @@
 # Stage 2 - Insurance Knowledge System (Enterprise RAG)
 
-Status: **APPROVED 2026-10-01** - phase 2.0 done, next 2.1 (corpus)
+Status: **APPROVED 2026-10-01** - phases 2.0 and 2.1 done, next 2.2 (ingestion)
 Pattern: #1 Enterprise RAG / Knowledge Intelligence
 Builds on: Stage 1 platform (kind, LiteLLM -> Groq, Qdrant, Postgres, MinIO, OTEL)
 
@@ -141,7 +141,7 @@ rerank score < threshold -> `insufficient_evidence` without calling the LLM.
 | Phase | Deliverable | Exit check |
 |-------|-------------|-----------|
 | 2.0 Platform prep | PVCs for data services; TEI reranker Deployment; LiteLLM `embed-small` -> OpenRouter; ADR-002/003/004 | `litellm/embeddings` returns 1536-dim vector; `reranker/rerank` returns scores; data survives pod delete |
-| 2.1 Corpus | `data/` Markdown corpus + `scripts/render-corpus.py` -> PDFs | 8-10 PDFs, each with doc metadata front-matter |
+| 2.1 Corpus | `data/` Markdown corpus + `scripts/render_corpus.py` -> PDFs and metadata manifest | 8 PDFs with validated front matter; manifest maps metadata and hashes to each PDF; rerender is byte-stable |
 | 2.2 Ingestion | `rag/ingestion` parse/chunk/embed/upsert + Postgres registry; K8s Job | Re-run is no-op (idempotent); counts match registry |
 | 2.3 Dense RAG | `rag/retrieval` dense search + grounded generation; `/v1/rag/query` mode `dense` | Smoke question returns cited answer |
 | 2.4 Hybrid + rerank | sparse vectors, RRF fusion, metadata filters, reranker | Modes `hybrid`, `hybrid_rerank` work |
@@ -162,7 +162,7 @@ rag/retrieval/{search.py,rerank.py,prompt.py,answer.py}
 rag/sql/001_rag_schema.sql
 apps/ai-api/main.py                         # + /v1/rag/query
 infrastructure/kubernetes/base/{reranker.yaml,rag-ingest-job.yaml,pvc.yaml}
-scripts/{render-corpus.py,ingest.sh,eval-rag.sh}
+scripts/{render_corpus.py,ingest.sh,eval-rag.sh}
 tests/{unit,integration,evaluation}/
 docs/adr/ADR-00{2,3,4}-*.md
 docs/eval/stage2-report.md

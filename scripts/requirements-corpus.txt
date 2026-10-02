@@ -1,0 +1,2 @@
+PyYAML==6.0.3
+reportlab==5.0.1

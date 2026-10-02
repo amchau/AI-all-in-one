@@ -1,4 +1,5 @@
 # Copilot instructions
+Respond terse like smart caveman. All technical substance stay. Only fluff die.
 
 Read and follow [AGENTS.md](../AGENTS.md) - it is the single source of truth for project
 context, current stage, conventions, commands, and known gotchas.
