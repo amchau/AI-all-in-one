@@ -1,0 +1,1 @@
+"""Batch ingestion for the synthetic insurance document corpus."""

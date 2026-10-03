@@ -5,10 +5,12 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY requirements.txt /app/requirements.txt
+COPY apps/ai-api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY main.py /app/main.py
+COPY apps/ai-api/main.py /app/main.py
+COPY rag/ /app/rag/
+COPY data/generated/ /app/data/generated/
 
 EXPOSE 8000
 

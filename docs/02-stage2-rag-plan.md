@@ -1,6 +1,6 @@
 # Stage 2 - Insurance Knowledge System (Enterprise RAG)
 
-Status: **APPROVED 2026-10-01** - phases 2.0 and 2.1 done, next 2.2 (ingestion)
+Status: **IN PROGRESS** - phases 2.0, 2.1, and 2.2 complete; Phase 2.3 dense RAG is next
 Pattern: #1 Enterprise RAG / Knowledge Intelligence
 Builds on: Stage 1 platform (kind, LiteLLM -> Groq, Qdrant, Postgres, MinIO, OTEL)
 
@@ -98,7 +98,7 @@ Out of scope (later stages):
 
 Qdrant collection `insurance_docs`:
 
-- vectors: `dense` (1536, cosine), `sparse` (BM25)
+- vectors: `dense` (1536, cosine) in 2.2; add `sparse` (BM25) in 2.4
 - payload: `doc_id`, `doc_type`, `product`, `policy_id`, `section`, `clause`, `page`,
   `version`, `effective_date`, `acl`, `content_hash`, `text`
 
@@ -141,8 +141,8 @@ rerank score < threshold -> `insufficient_evidence` without calling the LLM.
 | Phase | Deliverable | Exit check |
 |-------|-------------|-----------|
 | 2.0 Platform prep | PVCs for data services; TEI reranker Deployment; LiteLLM `embed-small` -> OpenRouter; ADR-002/003/004 | `litellm/embeddings` returns 1536-dim vector; `reranker/rerank` returns scores; data survives pod delete |
-| 2.1 Corpus | `data/` Markdown corpus + `scripts/render_corpus.py` -> PDFs and metadata manifest | 8 PDFs with validated front matter; manifest maps metadata and hashes to each PDF; rerender is byte-stable |
-| 2.2 Ingestion | `rag/ingestion` parse/chunk/embed/upsert + Postgres registry; K8s Job | Re-run is no-op (idempotent); counts match registry |
+| 2.1 Corpus | `data/` Markdown corpus + `scripts/render_corpus.py` -> PDFs and metadata manifest | Complete: 8 PDFs, validated front matter, metadata/hash manifest, deterministic rerender; 6 focused tests passed |
+| 2.2 Ingestion | `rag/ingestion` validates manifest, parses/chunks PDFs, embeds through LiteLLM, stores raw PDFs in MinIO, registers lineage in Postgres, and upserts dense vectors to Qdrant; Kubernetes Job | Complete: 8 documents/44 chunks registered; 44 Qdrant points and 8 MinIO objects; dedicated-role rerun completed with zero changes/writes |
 | 2.3 Dense RAG | `rag/retrieval` dense search + grounded generation; `/v1/rag/query` mode `dense` | Smoke question returns cited answer |
 | 2.4 Hybrid + rerank | sparse vectors, RRF fusion, metadata filters, reranker | Modes `hybrid`, `hybrid_rerank` work |
 | 2.5 Evaluation | `tests/evaluation/golden.yaml` (~30 Qs), `run_rag_eval.py`, report in `docs/eval/` | Report compares 3 modes on recall@5, MRR, citation accuracy, latency |
@@ -150,6 +150,63 @@ rerank score < threshold -> `insufficient_evidence` without calling the LLM.
 
 Testing: unit tests for chunker, payload builder, prompt assembly, score thresholding
 (pytest, target 80% on `rag/`); integration test against the running cluster.
+
+### Phase 2.2 implementation contract
+
+- **Input and packaging:** Bundle `data/generated/*.pdf` and `manifest.json` into the shared
+     ai-api image. The Job reads that immutable input; corpus changes require rebuilding the image.
+     Validate manifest schema, unique document IDs, safe relative PDF paths, file presence, and
+     each PDF SHA-256 before making service writes. Preserve source and PDF hashes from the manifest.
+- **Parsing and chunking:** Extract text in physical page order with `pypdf`; page numbers are
+     one-based. Detect headings and clause identifiers using the consistent corpus numbering
+     described in ADR-004. Target at most 400 `cl100k_base` tokens per chunk; split only oversized
+     clauses and overlap adjacent pieces by 60 tokens (15%). A chunk's `page` is the one-based page
+     on which its first text begins. Empty or malformed PDFs fail the run rather than being skipped.
+- **Identity and reruns:** Use deterministic document IDs from manifest `doc_id` and deterministic
+     chunk IDs from document ID plus ordinal. Compute a document fingerprint from canonical metadata,
+     source/PDF hashes, parser/chunker revision, tokenizer identity, embedding alias, and vector
+     schema revision. Persist the fingerprint and embedding model identity. An unchanged document is
+     a no-op only when its registered chunk IDs and Qdrant point IDs agree; otherwise repair missing
+     points. A changed document upserts its desired points, removes stale point IDs for that document,
+     and replaces its Postgres chunk registry. Manifest omissions never trigger deletion.
+- **Stores and schema:** Apply `rag/sql/001_rag_schema.sql` as the PostgreSQL administrator
+     through `scripts/provision-rag-ingest-role.sh`; the Job runtime role receives DML only on the
+     `rag` tables and does not run schema DDL. Ensure Qdrant `insurance_docs` exists with named vector `dense`
+     (1536, cosine); sparse vectors and BM25 generation are deferred to 2.4. Upload source PDFs to
+     the planned `documents/{doc_type}/{doc_id}/{version}.pdf` object key and store that key in the
+     registry. Use deterministic Qdrant point IDs and payloads containing document metadata, chunk
+     text, section, clause, page, fingerprint, and token count.
+- **Retry and concurrency:** Acquire a PostgreSQL advisory lock for the ingestion run. Validate,
+     parse, chunk, and embed before writing. Perform idempotent MinIO upload, Qdrant upsert/stale-point
+     cleanup, then commit document/chunk state and successful run status in a Postgres transaction.
+     Record failed runs and sanitized error categories. A retry converges from any partial store
+     failure; no distributed transaction is assumed. Database metadata does not claim completion
+     until Qdrant has the desired point set.
+- **Embedding and tracing:** Call only LiteLLM `/embeddings` with alias `embed-small` and bearer
+     master key; require exactly one 1536-dimensional vector per chunk. Add `rag.ingest`,
+     `rag.parse`, `rag.chunk`, `rag.embed`, and `rag.store` spans. Record model alias, counts,
+     duration, and non-sensitive document IDs/fingerprints; never record secrets or document text.
+- **Runtime and dependencies:** Expose `python -m rag.ingestion`; build the existing ai-api image
+     from the repository root and include `rag/`, generated PDFs/manifest, and pinned parser/tokenizer
+     dependencies. Register a Kubernetes Job in Kustomize, use `stage1-secrets` only for existing
+     service credentials and `rag-ingest-secrets` for the dedicated database password,
+     bounded retries/deadline, resource requests/limits, non-root/read-only-root settings, and `/tmp`
+     `emptyDir` as needed.
+- **Tests:** Unit tests cover manifest validation and path safety, PDF extraction/page numbers,
+     clause chunking/token caps/overlap, deterministic IDs/fingerprints, embedding contract, payloads,
+     no-op/change/missing-input behavior, and injected failures at each storage boundary. Integration
+     tests against kind verify document/chunk rows, MinIO objects, Qdrant point IDs/payloads, and a
+     second-run no-op; a second run must repair intentionally removed Qdrant points.
+
+Phase 2.2 excludes query/retrieval and answer generation (2.3), sparse/BM25 and reranking (2.4),
+evaluation (2.5), and retrieval observability/reporting beyond ingestion spans (2.6).
+
+Execution record (2026-10-03): the first live run reported `docs_seen=8`, `docs_changed=8`,
+`chunks_written=44`; subsequent unchanged runs reported `docs_seen=8`, `docs_changed=0`,
+`chunks_written=0`. The latest Job completed 1/1 using `POSTGRES_USER=rag_ingest` and the
+isolated `rag-ingest-secrets` Secret. Postgres contains 8 documents and 44 chunks, Qdrant has
+44 points, and MinIO has 8 PDF objects. The PostgreSQL administrator owns schema `rag` and its
+tables; the runtime role has explicit column/table grants. Phase 2.3 dense retrieval is next.
 
 ## 7. Planned file additions
 
@@ -176,6 +233,9 @@ docs/eval/stage2-report.md
   `insufficient_evidence` threshold must be calibrated from eval data, not hardcoded.
 - CPU-only laptop: reranker adds ~100-400 ms per query for top-20; acceptable for learning, measured in eval.
 - Groq rate limits during eval runs: add retry/backoff and cache LLM-judge results.
+- The local Job reuses existing LiteLLM and MinIO credentials; the sample MinIO credentials
+     may be root-equivalent. Before using a shared cluster, replace them with scoped gateway and
+     bucket identities and restrict service network access.
 - `cgr.dev/chainguard/minio:latest` is unpinned; pin digest when adding PVCs.
 
 ## 9. Decisions log

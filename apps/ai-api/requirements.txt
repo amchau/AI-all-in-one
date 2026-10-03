@@ -11,3 +11,5 @@ opentelemetry-instrumentation-httpx==0.57b0
 psycopg[binary]==3.2.9
 qdrant-client==1.15.1
 minio==7.2.16
+pypdf==6.19.0
+tiktoken==0.14.0

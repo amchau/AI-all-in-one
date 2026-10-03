@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: ai-api
-          image: localhost/ai-api:stage1
+          image: localhost/ai-api:stage2
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ! command -v flock >/dev/null 2>&1; then
+  echo "flock is required to serialize platform operations"
+  exit 1
+fi
+LOCK_DIR="${XDG_RUNTIME_DIR:-${HOME}/.cache}/ai-all-in-one"
+mkdir -p "${LOCK_DIR}"
+chmod 700 "${LOCK_DIR}"
+LOCK_FILE="${LOCK_DIR}/kind-ai-stage1.lock"
+exec 9>>"${LOCK_FILE}"
+chmod 600 "${LOCK_FILE}"
+if ! flock -n 9; then
+  echo "another platform operation is already running"
+  exit 1
+fi
+
 load_env_file() {
   local env_file="$1"
   [[ -f "${env_file}" ]] || return 0
@@ -13,8 +28,8 @@ load_env_file() {
     value="${value%\"}"
     value="${value#\"}"
     case "${key}" in
-      GROQ_API_KEY|OPENROUTER_API_KEY|LITELLM_MASTER_KEY|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|MINIO_ROOT_USER|MINIO_ROOT_PASSWORD|MINIO_ACCESS_KEY|MINIO_SECRET_KEY)
-        export "${key}=${value}"
+      GROQ_API_KEY|OPENROUTER_API_KEY|LITELLM_MASTER_KEY|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_INGEST_PASSWORD|MINIO_ROOT_USER|MINIO_ROOT_PASSWORD|MINIO_ACCESS_KEY|MINIO_SECRET_KEY)
+        printf -v "${key}" '%s' "${value}"
         ;;
     esac
   done < "${env_file}"
@@ -28,10 +43,14 @@ load_env_file .env
 : "${POSTGRES_DB:=platform}"
 : "${POSTGRES_USER:=app}"
 : "${POSTGRES_PASSWORD:=set-me}"
+: "${POSTGRES_INGEST_PASSWORD:=set-me}"
 : "${MINIO_ROOT_USER:=minio}"
 : "${MINIO_ROOT_PASSWORD:=set-me}"
 : "${MINIO_ACCESS_KEY:=${MINIO_ROOT_USER}}"
 : "${MINIO_SECRET_KEY:=${MINIO_ROOT_PASSWORD}}"
+export -n GROQ_API_KEY OPENROUTER_API_KEY LITELLM_MASTER_KEY POSTGRES_DB POSTGRES_USER \
+  POSTGRES_PASSWORD POSTGRES_INGEST_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD \
+  MINIO_ACCESS_KEY MINIO_SECRET_KEY
 
 assert_not_placeholder() {
   local key="$1"
@@ -48,34 +67,59 @@ assert_not_placeholder "GROQ_API_KEY" "${GROQ_API_KEY}"
 assert_not_placeholder "OPENROUTER_API_KEY" "${OPENROUTER_API_KEY}"
 assert_not_placeholder "LITELLM_MASTER_KEY" "${LITELLM_MASTER_KEY}"
 assert_not_placeholder "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
+assert_not_placeholder "POSTGRES_INGEST_PASSWORD" "${POSTGRES_INGEST_PASSWORD}"
 assert_not_placeholder "MINIO_ROOT_PASSWORD" "${MINIO_ROOT_PASSWORD}"
 assert_not_placeholder "MINIO_SECRET_KEY" "${MINIO_SECRET_KEY}"
 
-kubectl get ns ai-platform >/dev/null 2>&1 || kubectl create ns ai-platform
+EXPECTED_CONTEXT="kind-ai-stage1"
+current_context="$(kubectl config current-context)"
+if [[ "${current_context}" != "${EXPECTED_CONTEXT}" ]]; then
+  echo "Refusing to deploy secrets and manifests against kubectl context ${current_context}"
+  exit 1
+fi
+KUBECTL=(kubectl --context "${EXPECTED_CONTEXT}")
 
-kubectl -n ai-platform create secret generic stage1-secrets \
-  --from-literal=GROQ_API_KEY="${GROQ_API_KEY}" \
-  --from-literal=OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
-  --from-literal=LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY}" \
-  --from-literal=POSTGRES_DB="${POSTGRES_DB}" \
-  --from-literal=POSTGRES_USER="${POSTGRES_USER}" \
-  --from-literal=POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
-  --from-literal=MINIO_ROOT_USER="${MINIO_ROOT_USER}" \
-  --from-literal=MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD}" \
-  --from-literal=MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY}" \
-  --from-literal=MINIO_SECRET_KEY="${MINIO_SECRET_KEY}" \
-  --dry-run=client -o yaml | kubectl apply -f -
+if job_status="$("${KUBECTL[@]}" -n ai-platform get job rag-ingest -o jsonpath='{.status.active}' 2>&1)"; then
+  if [[ "${job_status}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Refusing to deploy while rag-ingest is active"
+    exit 1
+  fi
+elif [[ "${job_status}" != *"NotFound"* ]]; then
+  printf '%s\n' "${job_status}" >&2
+  exit 1
+fi
 
-kubectl apply -k infrastructure/kubernetes/base
+STAGE1_SECRET_FILE="$(mktemp)"
+INGEST_SECRET_FILE="$(mktemp)"
+trap 'rm -f "${STAGE1_SECRET_FILE}" "${INGEST_SECRET_FILE}"' EXIT
+chmod 600 "${STAGE1_SECRET_FILE}" "${INGEST_SECRET_FILE}"
+printf 'GROQ_API_KEY=%s\nOPENROUTER_API_KEY=%s\nLITELLM_MASTER_KEY=%s\nPOSTGRES_DB=%s\nPOSTGRES_USER=%s\nPOSTGRES_PASSWORD=%s\nMINIO_ROOT_USER=%s\nMINIO_ROOT_PASSWORD=%s\nMINIO_ACCESS_KEY=%s\nMINIO_SECRET_KEY=%s\n' \
+  "${GROQ_API_KEY}" "${OPENROUTER_API_KEY}" "${LITELLM_MASTER_KEY}" \
+  "${POSTGRES_DB}" "${POSTGRES_USER}" "${POSTGRES_PASSWORD}" \
+  "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
+  > "${STAGE1_SECRET_FILE}"
+printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_INGEST_PASSWORD}" > "${INGEST_SECRET_FILE}"
+"${KUBECTL[@]}" get ns ai-platform >/dev/null 2>&1 || "${KUBECTL[@]}" create ns ai-platform
 
-kubectl -n ai-platform rollout restart deploy/litellm
+"${KUBECTL[@]}" -n ai-platform create secret generic stage1-secrets \
+  --from-env-file="${STAGE1_SECRET_FILE}" \
+  --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
 
-kubectl -n ai-platform rollout status deploy/postgres --timeout=180s
-kubectl -n ai-platform rollout status deploy/qdrant --timeout=180s
-kubectl -n ai-platform rollout status deploy/minio --timeout=180s
-kubectl -n ai-platform rollout status deploy/litellm --timeout=180s
-kubectl -n ai-platform rollout status deploy/otel-collector --timeout=180s
-kubectl -n ai-platform rollout status deploy/ai-api --timeout=180s
-kubectl -n ai-platform rollout status deploy/reranker --timeout=900s
+"${KUBECTL[@]}" -n ai-platform create secret generic rag-ingest-secrets \
+  --from-env-file="${INGEST_SECRET_FILE}" \
+  --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
 
-kubectl -n ai-platform get pods
+"${KUBECTL[@]}" -n ai-platform delete job rag-ingest --ignore-not-found --wait=true
+"${KUBECTL[@]}" apply -k infrastructure/kubernetes/base
+
+"${KUBECTL[@]}" -n ai-platform rollout restart deploy/litellm
+
+"${KUBECTL[@]}" -n ai-platform rollout status deploy/postgres --timeout=180s
+"${KUBECTL[@]}" -n ai-platform rollout status deploy/qdrant --timeout=180s
+"${KUBECTL[@]}" -n ai-platform rollout status deploy/minio --timeout=180s
+"${KUBECTL[@]}" -n ai-platform rollout status deploy/litellm --timeout=180s
+"${KUBECTL[@]}" -n ai-platform rollout status deploy/otel-collector --timeout=180s
+"${KUBECTL[@]}" -n ai-platform rollout status deploy/ai-api --timeout=180s
+"${KUBECTL[@]}" -n ai-platform rollout status deploy/reranker --timeout=900s
+
+"${KUBECTL[@]}" -n ai-platform get pods

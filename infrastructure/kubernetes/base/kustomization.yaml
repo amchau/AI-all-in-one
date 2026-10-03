@@ -12,4 +12,5 @@ resources:
   - otel-collector-configmap.yaml
   - otel-collector.yaml
   - ai-api.yaml
+  - rag-ingest-job.yaml
   - reranker.yaml

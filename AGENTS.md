@@ -9,7 +9,7 @@ Learning + portfolio build of an **Enterprise AI Decision & Operations Platform*
 Kubernetes. Built in 10 stages (see [docs/ROADMAP.md](docs/ROADMAP.md)). First business domain:
 insurance claims investigation.
 
-- Current stage: **2 - Document ingestion + RAG** (plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
+- Current stage: **2 - Document ingestion + RAG** (Phase 2.3 dense RAG next; plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
 ## Working agreement
@@ -33,7 +33,7 @@ insurance claims investigation.
 |---------|--------|-------|
 | Cluster | kind on Podman (`KIND_EXPERIMENTAL_PROVIDER=podman`), cluster `ai-stage1` | `infrastructure/kind/` |
 | Namespace | `ai-platform` | `infrastructure/kubernetes/base/` (kustomize) |
-| API | FastAPI `apps/ai-api` | image `localhost/ai-api:stage1` |
+| API | FastAPI `apps/ai-api` + shared `rag/` package | image `localhost/ai-api:stage2` |
 | LLM gateway | LiteLLM, alias `gpt-oss-20b` -> `groq/openai/gpt-oss-20b` | `litellm-configmap.yaml` |
 | Vector DB | Qdrant v1.15.4 | `qdrant.yaml` |
 | Relational | PostgreSQL 16 | `postgres.yaml` |
@@ -49,8 +49,11 @@ insurance claims investigation.
 ./scripts/kind-create.sh        # create cluster (podman provider)
 ./scripts/build-ai-api.sh       # build + kind load ai-api image
 ./scripts/deploy-stage1.sh      # .env -> secret stage1-secrets, apply kustomize, wait rollouts
+./scripts/provision-rag-ingest-role.sh # create least-privilege rag_ingest role/schema ownership
 ./scripts/port-forward.sh       # ai-api on localhost:8000
 ./scripts/smoke-test.sh         # /healthz + /v1/investigate
+./scripts/ingest.sh            # run/re-run Phase 2.2 batch ingestion Job
+python3 -m pytest -q tests/unit
 kubectl -n ai-platform logs deploy/otel-collector --tail=200   # traces
 kubectl kustomize infrastructure/kubernetes/base >/dev/null    # validate manifests
 bash -n scripts/*.sh && python3 -m py_compile apps/ai-api/main.py
@@ -59,8 +62,9 @@ bash -n scripts/*.sh && python3 -m py_compile apps/ai-api/main.py
 ## Secrets
 
 - Real values live only in `.env` (git-ignored). Template: `.env.example`.
-- `deploy-stage1.sh` whitelists keys and builds secret `stage1-secrets`; add new keys there
-  and in `.env.example`, and reject placeholders with `assert_not_placeholder`.
+- `deploy-stage1.sh` whitelists keys and builds `stage1-secrets` plus isolated `rag-ingest-secrets`;
+   add keys to the correct Secret and `.env.example`, and reject placeholders.
+- `rag-ingest` uses fixed role `rag_ingest` with `POSTGRES_INGEST_PASSWORD` in isolated Secret `rag-ingest-secrets`; run the DBA provisioner, set its password locally, then refresh the Secret.
 - Never print, log, or echo secret values. Check presence with awk/grep that outputs status only.
 
 ## Kubernetes conventions
@@ -70,6 +74,7 @@ bash -n scripts/*.sh && python3 -m py_compile apps/ai-api/main.py
 - `readOnlyRootFilesystem: true` requires an `emptyDir` at `/tmp` (Python tempfile needs it).
 - Pin image tags (no `latest` for new images); prefer Docker Hub/quay over GHCR when equivalent.
 - Local images: tag `localhost/<name>:<tag>`, `imagePullPolicy: IfNotPresent`, load via `kind load`.
+- Shared ai-api image builds from the repository root; the base Kustomize Job is suspended until `scripts/ingest.sh` starts it.
 
 ## Known gotchas (learned in Stage 1)
 

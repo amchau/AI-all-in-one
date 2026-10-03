@@ -9,7 +9,7 @@ a measured problem, recorded in an ADR.
 | Stage | Name | Pattern | Status | Doc |
 |-------|------|---------|--------|-----|
 | 1 | Platform foundation on Kubernetes | AI Factory | Done | [01](01-stage1-foundation.md) |
-| 2 | Document ingestion + RAG | Knowledge Intelligence | In progress | [02](02-stage2-rag-plan.md) |
+| 2 | Document ingestion + RAG | Knowledge Intelligence | In progress (2.0-2.2 done; 2.3 next) | [02](02-stage2-rag-plan.md) |
 | 3 | Claims Copilot (UI, structured investigation output) | Human-in-the-loop | - | - |
 | 4 | Tool-calling agent (fake Claims/Policy/Customer/Payments/Fraud APIs) | Agentic workflow, MCP-style tools | - | - |
 | 5 | Claims risk model (XGBoost/LightGBM) | Decision Intelligence | - | - |
