@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from math import isfinite
 from typing import Any
 
@@ -20,6 +21,7 @@ class LiteLLMEmbedder:
         model: str = "embed-small",
         dimensions: int = 1536,
         batch_size: int = 32,
+        usage_callback: Callable[[dict[str, int]], None] | None = None,
     ) -> None:
         if not base_url or not master_key or not model:
             raise ValueError("LiteLLM URL, master key, and model are required")
@@ -31,6 +33,7 @@ class LiteLLMEmbedder:
         self._model = model
         self._dimensions = dimensions
         self._batch_size = batch_size
+        self._usage_callback = usage_callback
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -60,6 +63,15 @@ class LiteLLMEmbedder:
                 payload: Any = response.json()
             except ValueError as error:
                 raise EmbeddingError("LiteLLM returned invalid JSON") from error
+            usage = payload.get("usage") if isinstance(payload, dict) else None
+            if self._usage_callback is not None and isinstance(usage, dict):
+                token_counts = {
+                    name: value
+                    for name in ("prompt_tokens", "total_tokens")
+                    if type(value := usage.get(name)) is int and value >= 0
+                }
+                if token_counts:
+                    self._usage_callback(token_counts)
             vectors.extend(self._parse_batch(payload, len(batch)))
         return vectors
 

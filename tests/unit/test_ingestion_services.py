@@ -98,6 +98,37 @@ def test_embedder_sanitizes_litellm_http_errors() -> None:
     client.close()
 
 
+def test_embedder_reports_sanitized_token_usage_when_callback_is_configured() -> None:
+    usage: list[dict[str, int]] = []
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "data": [{"index": 0, "embedding": [0.1, 0.2]}],
+                    "usage": {
+                        "prompt_tokens": 3,
+                        "total_tokens": 3,
+                        "completion_tokens": True,
+                    },
+                },
+            )
+        )
+    )
+    embedder = LiteLLMEmbedder(
+        client=client,
+        base_url="http://litellm:4000",
+        master_key="test-secret",
+        model="embed-small",
+        dimensions=2,
+        usage_callback=usage.append,
+    )
+
+    assert embedder.embed_texts(["query"]) == [[0.1, 0.2]]
+    assert usage == [{"prompt_tokens": 3, "total_tokens": 3}]
+    client.close()
+
+
 def test_qdrant_payload_contains_metadata_and_chunk_lineage() -> None:
     document = ManifestDocument(
         metadata={

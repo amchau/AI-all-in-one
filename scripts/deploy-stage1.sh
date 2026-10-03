@@ -28,7 +28,7 @@ load_env_file() {
     value="${value%\"}"
     value="${value#\"}"
     case "${key}" in
-      GROQ_API_KEY|OPENROUTER_API_KEY|LITELLM_MASTER_KEY|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_INGEST_PASSWORD|MINIO_ROOT_USER|MINIO_ROOT_PASSWORD|MINIO_ACCESS_KEY|MINIO_SECRET_KEY)
+      GROQ_API_KEY|OPENROUTER_API_KEY|LITELLM_MASTER_KEY|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_INGEST_PASSWORD|POSTGRES_QUERY_PASSWORD|MINIO_ROOT_USER|MINIO_ROOT_PASSWORD|MINIO_ACCESS_KEY|MINIO_SECRET_KEY)
         printf -v "${key}" '%s' "${value}"
         ;;
     esac
@@ -44,12 +44,13 @@ load_env_file .env
 : "${POSTGRES_USER:=app}"
 : "${POSTGRES_PASSWORD:=set-me}"
 : "${POSTGRES_INGEST_PASSWORD:=set-me}"
+: "${POSTGRES_QUERY_PASSWORD:=set-me}"
 : "${MINIO_ROOT_USER:=minio}"
 : "${MINIO_ROOT_PASSWORD:=set-me}"
 : "${MINIO_ACCESS_KEY:=${MINIO_ROOT_USER}}"
 : "${MINIO_SECRET_KEY:=${MINIO_ROOT_PASSWORD}}"
 export -n GROQ_API_KEY OPENROUTER_API_KEY LITELLM_MASTER_KEY POSTGRES_DB POSTGRES_USER \
-  POSTGRES_PASSWORD POSTGRES_INGEST_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD \
+  POSTGRES_PASSWORD POSTGRES_INGEST_PASSWORD POSTGRES_QUERY_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD \
   MINIO_ACCESS_KEY MINIO_SECRET_KEY
 
 assert_not_placeholder() {
@@ -68,6 +69,7 @@ assert_not_placeholder "OPENROUTER_API_KEY" "${OPENROUTER_API_KEY}"
 assert_not_placeholder "LITELLM_MASTER_KEY" "${LITELLM_MASTER_KEY}"
 assert_not_placeholder "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
 assert_not_placeholder "POSTGRES_INGEST_PASSWORD" "${POSTGRES_INGEST_PASSWORD}"
+assert_not_placeholder "POSTGRES_QUERY_PASSWORD" "${POSTGRES_QUERY_PASSWORD}"
 assert_not_placeholder "MINIO_ROOT_PASSWORD" "${MINIO_ROOT_PASSWORD}"
 assert_not_placeholder "MINIO_SECRET_KEY" "${MINIO_SECRET_KEY}"
 
@@ -91,14 +93,16 @@ fi
 
 STAGE1_SECRET_FILE="$(mktemp)"
 INGEST_SECRET_FILE="$(mktemp)"
-trap 'rm -f "${STAGE1_SECRET_FILE}" "${INGEST_SECRET_FILE}"' EXIT
-chmod 600 "${STAGE1_SECRET_FILE}" "${INGEST_SECRET_FILE}"
+QUERY_SECRET_FILE="$(mktemp)"
+trap 'rm -f "${STAGE1_SECRET_FILE}" "${INGEST_SECRET_FILE}" "${QUERY_SECRET_FILE}"' EXIT
+chmod 600 "${STAGE1_SECRET_FILE}" "${INGEST_SECRET_FILE}" "${QUERY_SECRET_FILE}"
 printf 'GROQ_API_KEY=%s\nOPENROUTER_API_KEY=%s\nLITELLM_MASTER_KEY=%s\nPOSTGRES_DB=%s\nPOSTGRES_USER=%s\nPOSTGRES_PASSWORD=%s\nMINIO_ROOT_USER=%s\nMINIO_ROOT_PASSWORD=%s\nMINIO_ACCESS_KEY=%s\nMINIO_SECRET_KEY=%s\n' \
   "${GROQ_API_KEY}" "${OPENROUTER_API_KEY}" "${LITELLM_MASTER_KEY}" \
   "${POSTGRES_DB}" "${POSTGRES_USER}" "${POSTGRES_PASSWORD}" \
   "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
   > "${STAGE1_SECRET_FILE}"
 printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_INGEST_PASSWORD}" > "${INGEST_SECRET_FILE}"
+printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_QUERY_PASSWORD}" > "${QUERY_SECRET_FILE}"
 "${KUBECTL[@]}" get ns ai-platform >/dev/null 2>&1 || "${KUBECTL[@]}" create ns ai-platform
 
 "${KUBECTL[@]}" -n ai-platform create secret generic stage1-secrets \
@@ -109,17 +113,35 @@ printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_INGEST_PASSWORD}" > "${INGEST_SECRET
   --from-env-file="${INGEST_SECRET_FILE}" \
   --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
 
+"${KUBECTL[@]}" -n ai-platform create secret generic rag-query-secrets \
+  --from-env-file="${QUERY_SECRET_FILE}" \
+  --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
+
 "${KUBECTL[@]}" -n ai-platform delete job rag-ingest --ignore-not-found --wait=true
 "${KUBECTL[@]}" apply -k infrastructure/kubernetes/base
 
 "${KUBECTL[@]}" -n ai-platform rollout restart deploy/litellm
+"${KUBECTL[@]}" -n ai-platform rollout restart deploy/ai-api
 
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/postgres --timeout=180s
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/qdrant --timeout=180s
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/minio --timeout=180s
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/litellm --timeout=180s
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/otel-collector --timeout=180s
-"${KUBECTL[@]}" -n ai-platform rollout status deploy/ai-api --timeout=180s
+if query_role_exists="$(
+  printf "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rag_query');\n" |
+    "${KUBECTL[@]}" -n ai-platform exec -i deploy/postgres -- \
+      sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1'
+)"; then
+  if [[ "${query_role_exists}" == "t" ]]; then
+    "${KUBECTL[@]}" -n ai-platform rollout status deploy/ai-api --timeout=180s
+  else
+    echo "rag_query is not provisioned yet; API readiness waits until scripts/provision-rag-query-role.sh runs."
+  fi
+else
+  echo "Could not verify whether rag_query is provisioned. Refusing to claim API readiness."
+  exit 1
+fi
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/reranker --timeout=900s
 
 "${KUBECTL[@]}" -n ai-platform get pods

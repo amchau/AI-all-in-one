@@ -1,6 +1,6 @@
 # Stage 2 - Insurance Knowledge System (Enterprise RAG)
 
-Status: **IN PROGRESS** - phases 2.0, 2.1, and 2.2 complete; Phase 2.3 dense RAG is next
+Status: **IN PROGRESS** - phases 2.0-2.3 complete; Phase 2.4 hybrid retrieval and reranking next
 Pattern: #1 Enterprise RAG / Knowledge Intelligence
 Builds on: Stage 1 platform (kind, LiteLLM -> Groq, Qdrant, Postgres, MinIO, OTEL)
 
@@ -110,31 +110,35 @@ Postgres schema `rag`:
 
 MinIO bucket `documents/` - raw PDFs keyed by `doc_type/doc_id/version.pdf`.
 
-## 5. API contract (draft)
+## 5. API contract (Phase 2.3)
 
 ```http
 POST /v1/rag/query
 {
   "question": "Is flood damage to the ground floor covered?",
-  "filters": {"policy_id": "HOME-002", "doc_type": ["policy", "endorsement"]},
+     "policy_id": "HOME-002",
+     "loss_date": "2025-03-01",
+     "guidance_as_of": "2026-01-01",
   "top_k": 5,
-  "mode": "hybrid_rerank"          # dense | hybrid | hybrid_rerank
+     "mode": "dense"
 }
 
 200
 {
-  "answer": "...",
+     "answer": "... [C1]",
   "status": "answered",            # answered | insufficient_evidence
-  "citations": [{"doc_id": "HOME-002", "section": "4", "clause": "4.2", "page": 3}],
-  "chunks": [{"chunk_id": "...", "score": 0.82, "rerank_score": 0.91, "text": "..."}],
+     "citations": [{"ref": "C1", "chunk_id": "...", "doc_id": "POL-HOME-002-v2", "section": "4", "clause": "4.2", "page": 3}],
+     "chunks": [{"chunk_id": "...", "ref": "C1", "score": 0.82, "text": "..."}],
   "model": "gpt-oss-20b",
   "latency_ms": 1840,
   "trace_id": "..."
 }
 ```
 
-Guardrails: answer only from supplied context; every claim must cite a chunk; if top
-rerank score < threshold -> `insufficient_evidence` without calling the LLM.
+Guardrails: answer only from supplied context; every claim must cite retrieved chunk refs; the API
+validates each ref and renders canonical citations. No usable hits, explicit model abstention, or
+invalid citation output yields `insufficient_evidence`. Do not use a dense-score threshold until
+Phase 2.5 evaluation calibrates one. Upstream failures return sanitized service errors.
 
 ## 6. Build phases
 
@@ -143,13 +147,14 @@ rerank score < threshold -> `insufficient_evidence` without calling the LLM.
 | 2.0 Platform prep | PVCs for data services; TEI reranker Deployment; LiteLLM `embed-small` -> OpenRouter; ADR-002/003/004 | `litellm/embeddings` returns 1536-dim vector; `reranker/rerank` returns scores; data survives pod delete |
 | 2.1 Corpus | `data/` Markdown corpus + `scripts/render_corpus.py` -> PDFs and metadata manifest | Complete: 8 PDFs, validated front matter, metadata/hash manifest, deterministic rerender; 6 focused tests passed |
 | 2.2 Ingestion | `rag/ingestion` validates manifest, parses/chunks PDFs, embeds through LiteLLM, stores raw PDFs in MinIO, registers lineage in Postgres, and upserts dense vectors to Qdrant; Kubernetes Job | Complete: 8 documents/44 chunks registered; 44 Qdrant points and 8 MinIO objects; dedicated-role rerun completed with zero changes/writes |
-| 2.3 Dense RAG | `rag/retrieval` dense search + grounded generation; `/v1/rag/query` mode `dense` | Smoke question returns cited answer |
+| 2.3 Dense RAG | Temporal source selection, dense search, grounded generation, validated inline citations; `/v1/rag/query` | Live smoke query returns cited answer; unit tests verify no-evidence abstention |
 | 2.4 Hybrid + rerank | sparse vectors, RRF fusion, metadata filters, reranker | Modes `hybrid`, `hybrid_rerank` work |
 | 2.5 Evaluation | `tests/evaluation/golden.yaml` (~30 Qs), `run_rag_eval.py`, report in `docs/eval/` | Report compares 3 modes on recall@5, MRR, citation accuracy, latency |
 | 2.6 Observability + docs | spans `rag.embed`, `rag.search`, `rag.rerank`, `rag.generate` with attributes; smoke test extended; README + stage doc | Trace shows full RAG path; `smoke-test.sh` covers RAG |
 
-Testing: unit tests for chunker, payload builder, prompt assembly, score thresholding
-(pytest, target 80% on `rag/`); integration test against the running cluster.
+Testing: unit tests for chunker, payload builder, source-date selection, prompt assembly, citation
+validation, and abstention behavior (pytest, target 80% on new `rag/retrieval/` code); opt-in
+read-only integration test against the running cluster.
 
 ### Phase 2.2 implementation contract
 
@@ -206,7 +211,42 @@ Execution record (2026-10-03): the first live run reported `docs_seen=8`, `docs_
 `chunks_written=0`. The latest Job completed 1/1 using `POSTGRES_USER=rag_ingest` and the
 isolated `rag-ingest-secrets` Secret. Postgres contains 8 documents and 44 chunks, Qdrant has
 44 points, and MinIO has 8 PDF objects. The PostgreSQL administrator owns schema `rag` and its
-tables; the runtime role has explicit column/table grants. Phase 2.3 dense retrieval is next.
+tables; the ingestion runtime role has explicit column/table grants. Phase 2.3 is complete; see
+ADR-009 for query-time source selection, citations, abstention, and read-only access.
+
+### Phase 2.3 implementation contract
+
+- **Request:** `POST /v1/rag/query` accepts a non-empty question, `policy_id`, required
+     `loss_date`, optional `guidance_as_of` (defaults to `loss_date`), `top_k` from 1 to 20
+     (default 5), and fixed `mode: dense`. Other modes are rejected until Phase 2.4.
+- **Source selection:** select the latest base policy effective on or before `loss_date`, plus
+     matching endorsements effective by that date. Include relevant policy-specific or global
+     procedures/regulations effective by `guidance_as_of`, matching the selected product or `all`.
+     Fail closed for no applicable base wording or ambiguous latest versions. The current schema has
+     no end-date/supersedes fields; do not infer legal precedence.
+- **Least privilege:** API health and source metadata queries use dedicated `rag_query` credentials
+     from `rag-query-secrets`. Grant SELECT only on required metadata columns of `rag.documents`;
+     never expose bootstrap or ingestion DB credentials to the API.
+- **Retrieval:** embed with LiteLLM alias `embed-small`, require a finite 1536-dimension vector,
+     and query Qdrant collection `insurance_docs` using named vector `dense`, filtered by the resolved
+     document IDs. Preserve scores and citation metadata. Query path does not write to Postgres,
+     Qdrant, or MinIO.
+- **Grounded response:** send bounded context to LiteLLM `gpt-oss-20b` as untrusted evidence.
+     Require structured claims with inline refs such as `[C1]`; validate each ref against retrieved
+     chunks; cap output at 800 completion tokens, 20 claims, and 2,000 characters per claim; map refs
+     to canonical document/section/clause/page citations. No usable hits, explicit
+     model abstention, or invalid citations returns `insufficient_evidence` with an empty answer.
+     Do not use an uncalibrated similarity threshold. Infrastructure failures return sanitized errors.
+- **Tracing and tests:** add spans for source resolution, `rag.embed`, `rag.search`, and
+     `rag.generate` without recording secrets, full questions, or chunk text. Unit-test date/version
+     selection, Qdrant filters, prompt/citation validation, abstention, malformed output, and sanitized
+     failures. The opt-in cluster test verifies citation-to-chunk mapping and unchanged Postgres
+     document/Qdrant point counts.
+
+Phase 2.3 execution record (2026-10-03): the user reports that the dedicated `rag_query` password
+was set, the API image was rebuilt and deployed, the service was port-forwarded, and the smoke test
+completed successfully with a cited query response. The assistant did not independently repeat the
+live query. Dense RAG is complete; Phase 2.4 hybrid retrieval and reranking is next.
 
 ## 7. Planned file additions
 
@@ -215,13 +255,13 @@ data/{policies,endorsements,procedures,regulations}/*.md
 rag/__init__.py
 rag/config.py
 rag/ingestion/{__main__.py,parse.py,chunk.py,embed.py,store.py,registry.py}
-rag/retrieval/{search.py,rerank.py,prompt.py,answer.py}
+rag/retrieval/{registry.py,sources.py,search.py,generation.py,answer.py}
 rag/sql/001_rag_schema.sql
 apps/ai-api/main.py                         # + /v1/rag/query
 infrastructure/kubernetes/base/{reranker.yaml,rag-ingest-job.yaml,pvc.yaml}
-scripts/{render_corpus.py,ingest.sh,eval-rag.sh}
+scripts/{render_corpus.py,ingest.sh,provision-rag-query-role.sh,eval-rag.sh}
 tests/{unit,integration,evaluation}/
-docs/adr/ADR-00{2,3,4}-*.md
+docs/adr/ADR-00{2,3,4,9}-*.md
 docs/eval/stage2-report.md
 ```
 
@@ -241,4 +281,5 @@ docs/eval/stage2-report.md
 ## 9. Decisions log
 
 All resolved 2026-10-01: Qdrant; OpenRouter embeddings; TEI reranker pod; script metrics +
-optional OpenRouter judge; UK FCA ICOBS 8 themes (synthetic paraphrase).
+optional OpenRouter judge; UK FCA ICOBS 8 themes (synthetic paraphrase). Phase 2.3 decisions
+recorded 2026-10-03 in ADR-009.

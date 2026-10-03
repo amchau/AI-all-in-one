@@ -9,7 +9,7 @@ Learning + portfolio build of an **Enterprise AI Decision & Operations Platform*
 Kubernetes. Built in 10 stages (see [docs/ROADMAP.md](docs/ROADMAP.md)). First business domain:
 insurance claims investigation.
 
-- Current stage: **2 - Document ingestion + RAG** (Phase 2.3 dense RAG next; plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
+- Current stage: **2 - Document ingestion + RAG** (Phases 2.0-2.3 complete; Phase 2.4 hybrid retrieval next; plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
 ## Working agreement
@@ -50,8 +50,9 @@ insurance claims investigation.
 ./scripts/build-ai-api.sh       # build + kind load ai-api image
 ./scripts/deploy-stage1.sh      # .env -> secret stage1-secrets, apply kustomize, wait rollouts
 ./scripts/provision-rag-ingest-role.sh # create least-privilege rag_ingest role/schema ownership
+./scripts/provision-rag-query-role.sh  # create read-only rag_query role for Phase 2.3
 ./scripts/port-forward.sh       # ai-api on localhost:8000
-./scripts/smoke-test.sh         # /healthz + /v1/investigate
+./scripts/smoke-test.sh         # /healthz + /v1/investigate + /v1/rag/query
 ./scripts/ingest.sh            # run/re-run Phase 2.2 batch ingestion Job
 python3 -m pytest -q tests/unit
 kubectl -n ai-platform logs deploy/otel-collector --tail=200   # traces
@@ -62,9 +63,11 @@ bash -n scripts/*.sh && python3 -m py_compile apps/ai-api/main.py
 ## Secrets
 
 - Real values live only in `.env` (git-ignored). Template: `.env.example`.
-- `deploy-stage1.sh` whitelists keys and builds `stage1-secrets` plus isolated `rag-ingest-secrets`;
-   add keys to the correct Secret and `.env.example`, and reject placeholders.
+- `deploy-stage1.sh` whitelists keys and builds `stage1-secrets` plus isolated
+   `rag-ingest-secrets` and `rag-query-secrets`; add keys to the correct Secret and `.env.example`,
+   and reject placeholders.
 - `rag-ingest` uses fixed role `rag_ingest` with `POSTGRES_INGEST_PASSWORD` in isolated Secret `rag-ingest-secrets`; run the DBA provisioner, set its password locally, then refresh the Secret.
+- `ai-api` uses fixed read-only role `rag_query` with `POSTGRES_QUERY_PASSWORD` in isolated Secret `rag-query-secrets`; never use bootstrap credentials for query-time metadata reads.
 - Never print, log, or echo secret values. Check presence with awk/grep that outputs status only.
 
 ## Kubernetes conventions

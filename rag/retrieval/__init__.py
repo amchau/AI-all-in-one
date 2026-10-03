@@ -1,0 +1,1 @@
+"""Dense retrieval and grounded answers for Stage 2.3."""
