@@ -1,6 +1,6 @@
 # Stage 2 - Insurance Knowledge System (Enterprise RAG)
 
-Status: **IN PROGRESS** - Phase 2.4 retrieval modes deployed; top_k=20 generation follow-up remains; Phase 2.5 evaluation is next
+Status: **IN PROGRESS** - Phase 2.5 evaluation complete; Phase 2.6 observability + docs is next; Phase 2.4 top_k=20 generation follow-up remains open
 Pattern: #1 Enterprise RAG / Knowledge Intelligence
 Builds on: Stage 1 platform (kind, LiteLLM -> Groq, Qdrant, Postgres, MinIO, OTEL)
 
@@ -149,7 +149,7 @@ Phase 2.5 evaluation calibrates one. Upstream failures return sanitized service 
 | 2.2 Ingestion | `rag/ingestion` validates manifest, parses/chunks PDFs, embeds through LiteLLM, stores raw PDFs in MinIO, registers lineage in Postgres, and upserts dense vectors to Qdrant; Kubernetes Job | Complete: 8 documents/44 chunks registered; 44 Qdrant points and 8 MinIO objects; dedicated-role rerun completed with zero changes/writes |
 | 2.3 Dense RAG | Temporal source selection, dense search, grounded generation, validated inline citations; `/v1/rag/query` | Live smoke query returns cited answer; unit tests verify no-evidence abstention |
 | 2.4 Hybrid + rerank | Sparse BM25 vectors, native Qdrant RRF fusion, shared metadata filters, TEI reranking, and backward-compatible API modes | Deployed; 44 points verified with dense+sparse vectors and ingestion no-op verified. Close after bounded-generation fix passes top_k=20 tests; see tracked follow-up below |
-| 2.5 Evaluation | `tests/evaluation/golden.yaml` (~30 Qs), `run_rag_eval.py`, report in `docs/eval/` | Report compares 3 modes at fixed top_k=5 on recall@5, MRR, citation accuracy, answerability, latency, and request failures; record known top_k=20 issue separately |
+| 2.5 Evaluation | `tests/evaluation/golden.yaml` (35 Qs, 105 API attempts), `scripts/run_rag_eval.py`, report in `docs/eval/` | Complete: all 105 requests succeeded; comparative metrics and per-case outcomes recorded; top_k=20 issue remains tracked separately |
 | 2.6 Observability + docs | spans `rag.embed`, `rag.search`, `rag.rerank`, `rag.generate` with attributes; smoke test extended; README + stage doc | Trace shows full RAG path; `smoke-test.sh` covers RAG |
 
 Testing: unit tests for chunker, payload builder, source-date selection, prompt assembly, citation
@@ -331,24 +331,72 @@ separately from answerability/abstention results, and keep this follow-up visibl
 
 ### Phase 2.5 evaluation plan
 
-- Build an approximately 30-question synthetic golden set covering home, motor, and commercial
-     policies; endorsements; procedures/regulatory guidance; date boundaries; exact identifiers and
-     lexical traps; and unanswerable questions. Annotate each query with its policy/date inputs,
-     answerability, and expected relevant chunk IDs (plus required facts where citation/answer checks
-     need them).
-- Run `dense`, `hybrid`, and `hybrid_rerank` against the same query, temporal filters, and
-     `top_k=5`. Keep RRF equally weighted for the baseline. Treat `top_k=8` probes as diagnostics,
+- **Evaluation contract (agreed 2026-10-04):** run through the deployed `/v1/rag/query` HTTP API
+     so measurements include the real service path. The runner is read-only and calls no model
+     provider directly. Use the same query and temporal filters for `dense`, `hybrid`, and
+     `hybrid_rerank`, with `top_k=5`; retain equal-weight RRF. `top_k=8` probes are diagnostics,
      not part of the primary comparison.
-- Measure retrieval recall@5 and MRR from expected chunk IDs; citation accuracy against annotated
-     relevant evidence; answerability/abstention accuracy; median/p95 latency; token usage where
-     available; and sanitized request-failure rate. Do not count HTTP/model failures as
-     `insufficient_evidence` or silently exclude them.
-- Add `tests/evaluation/golden.yaml` and `run_rag_eval.py`; write reproducible results and
-     methodology to `docs/eval/stage2-report.md`. Any RRF tuning must use a held-out split and report
-     its effect on all three modes' quality and latency.
-- Phase 2.5 exits when the report compares all modes on the full golden set, lists failures and
-     answerability outcomes, and supports any quality claims with measured results. It can proceed
-     while the Phase 2.4 top_k=20 remediation remains tracked.
+- **Golden set:** `tests/evaluation/golden.yaml` contains 35 synthetic questions covering home,
+     motor, and commercial policies; endorsements; procedures/regulatory guidance; effective-date
+     boundaries; exact identifiers and lexical traps; and unanswerable cases. Each case records a
+     stable case ID, question, policy/date inputs, answerability label, and expected relevant chunk
+     IDs plus expected document/section/clause locations. Its SHA-256 pins it to the generated corpus
+     manifest; before making API calls, the runner recomputes chunk IDs and locations from the
+     checked-in PDFs and rejects unknown IDs or labels that disagree with their annotated source
+     locations. Dataset validation rejects duplicate IDs, empty relevant evidence for answerable
+     cases, and malformed request inputs.
+     Annotation audit (2026-10-04): every answerable case's expected IDs were checked against the
+     extracted chunk text and source/section/clause metadata; unanswerable labels were checked against
+     the checked-in corpus. Unit tests validate every ID-to-location mapping and specifically guard
+     the escape-of-water versus gradual-seepage clause boundary.
+- **Answer scoring scope:** the baseline scores answerability/status against the gold label and
+     citation relevance against expected chunk IDs. It does not claim semantic answer correctness
+     or faithfulness; no LLM judge is in this baseline. A later judge or required-fact score needs a
+     separately reviewed protocol and must not replace these deterministic measures.
+- **Metrics:** recall@5 and MRR are macro-averaged over answerable cases only. Citation precision
+     is pooled relevant cited chunks divided by all cited chunks; zero-citation responses have no
+     precision value and are counted separately. Answerability accuracy compares
+     `answered`/`insufficient_evidence` with the gold label on successful HTTP responses.
+     Client-observed latency includes all attempts; service `latency_ms` is available only on
+     successful responses. Report median and nearest-rank p95, sample counts, and request failure
+     rate over all attempts. HTTP/model failures are neither abstentions nor silently excluded;
+     report them by mode and retain status/code and trace ID when available.
+- **Execution and provenance:** attempt every case once in each mode, sequentially, with mode order
+     rotated deterministically across cases to reduce fixed ordering effects. Do not automatically
+     retry failed requests. Record timestamp, dataset/corpus hashes, code revision and evaluator
+     source digest, dependency/Python versions, observed generation model, request counts, and
+     per-case metrics. Embedding and reranker model configuration is not exposed by this API and is
+     explicitly reported as unavailable unless separately verified. Never include credentials or
+     generated answer/evidence text. The public response does not expose token usage; do not expand
+     the API solely for evaluation.
+- **Implementation and report:** `scripts/run_rag_eval.py` accepts API base URL, golden-set path,
+     report/results paths, and timeout. Outputs inside the repository are restricted to `docs/eval/`;
+     the runner rejects credentials/query secrets, stores only URL origin plus a base-path hash, and
+     rejects nested, directory, and source/input collisions before API calls. Keep the golden YAML
+     and its PyYAML-only evaluation dependency under `tests/evaluation/`. Unit-test dataset validation,
+     metric calculations, failure classification, and response parsing without the cluster. Write
+     methodology, environment, per-mode aggregates, per-case outcomes, failures, and limitations to
+     `docs/eval/stage2-report.md`, with ID/metric artifacts only and no answer/evidence text.
+     Include the API dependency pins plus installed `pypdf`/`tiktoken` versions in provenance because
+     PDF parsing and token-based chunk IDs affect gold-label identity.
+- **Comparison boundary:** this is a baseline comparison, not an RRF tuning exercise. Do not tune
+     fusion weights or introduce score thresholds before reporting baseline results. Any later tuning
+     must use a held-out set and report quality, latency, and failure effects for all modes.
+- **Phase 2.4 separation:** the known `hybrid` `top_k=20` Groq `json_validate_failed` remains a
+     tracked 2.4 closure item. The 2.5 primary comparison uses fixed `top_k=5`; any provider failures
+     encountered at that setting are reported separately and still count against request reliability.
+     Phase 2.5 may proceed without claiming unrestricted `top_k` support.
+- **Exit:** publish a report after every golden case has an attempted request in all three modes,
+     metrics and failures are accounted for, and methodology/limitations are explicit. Support quality
+     claims only with measured results. Phase 2.5 can proceed while the Phase 2.4 `top_k=20`
+     remediation remains tracked.
+
+Execution record (2026-10-04): `docs/eval/stage2-report.md` records all 35 golden cases across
+`dense`, `hybrid`, and `hybrid_rerank` at `top_k=5`; 105/105 requests succeeded. Recall@5 was
+0.966/0.983/1.000, MRR was 0.931/0.948/0.948, and pooled citation precision was 76.1%/79.5%/78.7%
+respectively. Answerability accuracy was 100% for each mode. This does not establish semantic answer
+correctness or faithfulness. Phase 2.5 is complete; Phase 2.6 is next. The Phase 2.4 `top_k=20`
+generation follow-up remains open.
 
 ## 7. Planned file additions
 

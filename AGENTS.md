@@ -9,7 +9,7 @@ Learning + portfolio build of an **Enterprise AI Decision & Operations Platform*
 Kubernetes. Built in 10 stages (see [docs/ROADMAP.md](docs/ROADMAP.md)). First business domain:
 insurance claims investigation.
 
-- Current stage: **2 - Document ingestion + RAG** (Phases 2.0-2.3 complete; Phase 2.4 deployed with a tracked top_k=20 generation failure; Phase 2.5 evaluation is next; plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
+- Current stage: **2 - Document ingestion + RAG** (Phases 2.0-2.3 complete; Phase 2.4 deployed with a tracked top_k=20 generation follow-up; Phase 2.5 evaluation complete; Phase 2.6 observability + docs is next; plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
 ## Working agreement

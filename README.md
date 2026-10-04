@@ -6,7 +6,7 @@ insurance claims investigation.
 Current progress:
 
 - Stage 1 platform foundation is complete.
-- Stage 2 document ingestion + RAG is in progress; Phase 2.4 retrieval modes are deployed with a tracked top_k=20 generation failure, and Phase 2.5 evaluation is next.
+- Stage 2 document ingestion + RAG is in progress; Phase 2.5 evaluation is complete and Phase 2.6 observability + docs is next. The Phase 2.4 top_k=20 generation follow-up remains open.
 - See [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
 
 ## Stack
@@ -142,6 +142,25 @@ The ingestion script recreates and starts the suspended Job, watches for success
 prints its non-secret summary logs. Re-running ingestion is safe. The smoke test calls `/v1/rag/query`
 in dense, hybrid, and hybrid-rerank modes with a sample HOME-002 question.
 
+## Phase 2.5 RAG evaluation
+
+With the API port-forward running, install the evaluation parser alongside the API dependencies and
+run the fixed-`top_k=5` comparison:
+
+```bash
+./.venv/bin/python -m pip install -r apps/ai-api/requirements.txt -r tests/evaluation/requirements.txt
+RAG_API_BASE_URL=http://127.0.0.1:8000 ./.venv/bin/python -m scripts.run_rag_eval
+```
+
+This sends 105 requests (35 cases across three modes), uses no automatic retries, and may incur model
+provider usage. The runner verifies the golden labels against the checked-in corpus before making
+requests. It writes `docs/eval/stage2-report.md` and `docs/eval/stage2-results.json`. Exit code `1`
+means one or more requests failed; artifacts are still written and failures remain separate from
+insufficient-evidence responses. Exit code `2` means preflight validation failed before requests.
+Artifacts record the API origin and a hash of any base path, not the raw path.
+The known `top_k=20` generation issue is not exercised by this baseline; see the Phase 2.4 follow-up
+in the Stage 2 plan.
+
 7. Inspect traces from collector logs:
 
 ```bash
@@ -151,6 +170,6 @@ kubectl -n ai-platform logs deploy/otel-collector --tail=200
 ## Current status
 
 - Stage 1: done (smoke test passing with Groq `gpt-oss-20b`)
-- Stage 2: in progress - Phase 2.4 modes are deployed; known top_k=20 generation issue remains before Phase 2.4 closure; Phase 2.5 evaluation is next
+- Stage 2: in progress - Phase 2.5 evaluation is complete; Phase 2.6 observability + docs is next; known top_k=20 generation follow-up remains before Phase 2.4 closure
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).

@@ -1,0 +1,363 @@
+schema_version: 1
+corpus_manifest_sha256: b093b13c2812dbfeccbe8b89caecead69b0e3649b0dfcad40717bcf641a20206
+cases:
+  - case_id: home-flood-extension-cover
+    question: Does HOME-002 cover direct flood damage when the flood extension applies?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    guidance_as_of: "2026-01-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 266a4326-46d4-53f6-aaf3-e403f26b4184
+      - 474edf11-e472-5968-8c96-2adc7d3ec2bf
+    expected_sources:
+      - doc_id: END-HOME-002-FLOOD-EXT-01
+        section: "1"
+      - doc_id: POL-HOME-002-v2
+        section: "4"
+        clause: "4.2"
+  - case_id: home-surface-water-definition
+    question: How does HOME-002 define flood involving surface run-off?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - e95cd423-6de5-55b2-a7a7-aac563dfa2fa
+    expected_sources:
+      - doc_id: POL-HOME-002-v2
+        section: "4"
+        clause: "4.1"
+  - case_id: home-base-flood-exclusion
+    question: What does base clause 4.2 say about flood without an applicable extension?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 474edf11-e472-5968-8c96-2adc7d3ec2bf
+    expected_sources:
+      - doc_id: POL-HOME-002-v2
+        section: "4"
+        clause: "4.2"
+  - case_id: home-ground-floor-contents
+    question: Are ground-floor contents covered for direct flood damage under the extension?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 54233993-4950-512e-82e6-0237294b6695
+    expected_sources:
+      - doc_id: END-HOME-002-FLOOD-EXT-01
+        section: "2"
+  - case_id: home-cellar-contents
+    question: What applies to flood-damaged contents stored below ground level?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 54233993-4950-512e-82e6-0237294b6695
+    expected_sources:
+      - doc_id: END-HOME-002-FLOOD-EXT-01
+        section: "2"
+  - case_id: home-sudden-escape-cover
+    question: Is sudden accidental water escape from a domestic pipe covered?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - cdc9d10c-9c06-5a3e-8557-4661fd836da3
+      - 2624b966-53ae-5756-a335-a31a4cf81661
+    expected_sources:
+      - doc_id: POL-HOME-002-v2
+        section: "3"
+      - doc_id: END-HOME-002-WATER-LIMIT-02
+        section: "1"
+  - case_id: home-failed-pipe-repair-cost
+    question: Does the policy pay to repair the failed pipe itself?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - cdc9d10c-9c06-5a3e-8557-4661fd836da3
+    expected_sources:
+      - doc_id: POL-HOME-002-v2
+        section: "3"
+  - case_id: home-gradual-leak-before-clarification
+    question: Is gradual damage from repeated small leaks excluded on 31 January 2025?
+    policy_id: HOME-002
+    loss_date: "2025-01-31"
+    answerable: true
+    relevant_chunk_ids:
+      - 3c122b58-9f76-557a-b92f-81f025ab8ac3
+    expected_sources:
+      - doc_id: POL-HOME-002-v2
+        section: "4"
+        clause: "4.3"
+  - case_id: home-gradual-leak-clarification-effective
+    question: What does the active water clarification say about repeated small leaks?
+    policy_id: HOME-002
+    loss_date: "2025-02-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 3c122b58-9f76-557a-b92f-81f025ab8ac3
+      - 64de99ea-4b85-5dce-84aa-2ec10a2b05b7
+    expected_sources:
+      - doc_id: POL-HOME-002-v2
+        section: "4"
+        clause: "4.3"
+      - doc_id: END-HOME-002-WATER-LIMIT-02
+        section: "2"
+  - case_id: home-discovery-date-is-not-start-date
+    question: Does finding water damage today prove the leak began today?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 64de99ea-4b85-5dce-84aa-2ec10a2b05b7
+      - 5ea9b08f-212f-5bf5-ae14-be8ebf5c51c9
+    expected_sources:
+      - doc_id: END-HOME-002-WATER-LIMIT-02
+        section: "2"
+      - doc_id: PROC-HOME-WATER-EVIDENCE-01
+        section: "3"
+  - case_id: home-water-tracing-costs
+    question: Can reasonable costs to locate an insured water leak be covered?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - cdc9d10c-9c06-5a3e-8557-4661fd836da3
+      - 2624b966-53ae-5756-a335-a31a4cf81661
+    expected_sources:
+      - doc_id: POL-HOME-002-v2
+        section: "3"
+      - doc_id: END-HOME-002-WATER-LIMIT-02
+        section: "1"
+  - case_id: home-water-evidence-request
+    question: What evidence can help establish the source and duration of a home water leak?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 85b3b7f7-44a5-5e75-8744-e7f235b6094a
+      - a4285eee-a62f-5d83-baac-76dcb812f0cd
+    expected_sources:
+      - doc_id: PROC-HOME-WATER-EVIDENCE-01
+        section: "2"
+      - doc_id: PROC-HOME-WATER-EVIDENCE-01
+        section: "1"
+  - case_id: home-water-chronology
+    question: How should an investigator distinguish discovery date from when water damage began?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 5ea9b08f-212f-5bf5-ae14-be8ebf5c51c9
+      - 64de99ea-4b85-5dce-84aa-2ec10a2b05b7
+    expected_sources:
+      - doc_id: PROC-HOME-WATER-EVIDENCE-01
+        section: "3"
+      - doc_id: END-HOME-002-WATER-LIMIT-02
+        section: "2"
+  - case_id: home-ambiguous-cause-escalation
+    question: When should a home water claim with multiple plausible causes be escalated?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 4559f723-918a-568f-b91a-22ed9f8adbd3
+      - 35906a9c-0980-5e7f-91d4-617333b6a9d4
+    expected_sources:
+      - doc_id: PROC-HOME-WATER-EVIDENCE-01
+        section: "4"
+      - doc_id: PROC-CLAIMS-FAIR-HANDLING-01
+        section: "3"
+  - case_id: home-claim-evidence-availability
+    question: What does HOME-002 say about keeping damaged items available for inspection?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 9aab8cc3-8d10-5d49-8f9c-b22e405081dc
+    expected_sources:
+      - doc_id: POL-HOME-002-v2
+        section: "6"
+  - case_id: motor-comprehensive-accidental-damage
+    question: What does comprehensive motor cover say about sudden accidental vehicle damage?
+    policy_id: MOTOR-001
+    loss_date: "2025-03-15"
+    answerable: true
+    relevant_chunk_ids:
+      - cdc0862d-4385-52f0-b9eb-be492d87bcc7
+    expected_sources:
+      - doc_id: POL-MOTOR-001-v1
+        section: "1"
+  - case_id: motor-flood-damage
+    question: Is direct flood damage to a comprehensively insured vehicle covered?
+    policy_id: MOTOR-001
+    loss_date: "2025-03-15"
+    answerable: true
+    relevant_chunk_ids:
+      - aac3eab5-4ab4-5bd7-952f-c5642b6db870
+    expected_sources:
+      - doc_id: POL-MOTOR-001-v1
+        section: "3"
+  - case_id: motor-engine-start-after-flood
+    question: Is engine failure from trying to start a flooded vehicle covered?
+    policy_id: MOTOR-001
+    loss_date: "2025-03-15"
+    answerable: true
+    relevant_chunk_ids:
+      - aac3eab5-4ab4-5bd7-952f-c5642b6db870
+    expected_sources:
+      - doc_id: POL-MOTOR-001-v1
+        section: "3"
+  - case_id: motor-theft
+    question: Does the motor wording cover theft of the insured vehicle?
+    policy_id: MOTOR-001
+    loss_date: "2025-03-15"
+    answerable: true
+    relevant_chunk_ids:
+      - 165a363e-eafc-5db7-89f6-a3d793c191d1
+    expected_sources:
+      - doc_id: POL-MOTOR-001-v1
+        section: "2"
+  - case_id: motor-settlement-options
+    question: What settlement options apply to a comprehensive accidental damage claim?
+    policy_id: MOTOR-001
+    loss_date: "2025-03-15"
+    answerable: true
+    relevant_chunk_ids:
+      - cdc0862d-4385-52f0-b9eb-be492d87bcc7
+    expected_sources:
+      - doc_id: POL-MOTOR-001-v1
+        section: "1"
+  - case_id: motor-repair-before-inspection
+    question: Can urgent work happen before inspection, and what about permanent repairs?
+    policy_id: MOTOR-001
+    loss_date: "2025-03-15"
+    answerable: true
+    relevant_chunk_ids:
+      - 47e61709-d84b-53ca-be9b-62f52a114b29
+    expected_sources:
+      - doc_id: POL-MOTOR-001-v1
+        section: "5"
+  - case_id: motor-uninsured-mechanical-failure
+    question: Is mechanical failure without an insured event covered by the motor policy?
+    policy_id: MOTOR-001
+    loss_date: "2025-03-15"
+    answerable: true
+    relevant_chunk_ids:
+      - cf727cb1-19ac-5dc5-8054-0047345fd73e
+    expected_sources:
+      - doc_id: POL-MOTOR-001-v1
+        section: "4"
+  - case_id: commercial-scheduled-property
+    question: Which small-business property categories can be insured under COMM-001?
+    policy_id: COMM-001
+    loss_date: "2025-06-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 49454967-561a-548f-8bf8-d4c926c410a5
+    expected_sources:
+      - doc_id: POL-COMM-001-v1
+        section: "1"
+  - case_id: commercial-deliberate-damage
+    question: Is damage caused deliberately by the insured accidental damage?
+    policy_id: COMM-001
+    loss_date: "2025-06-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 2777c0a3-566b-5a6f-95ef-e70d79a38530
+    expected_sources:
+      - doc_id: POL-COMM-001-v1
+        section: "2"
+  - case_id: commercial-escape-of-water
+    question: Does commercial water cover include repairing the part that leaked?
+    policy_id: COMM-001
+    loss_date: "2025-06-01"
+    answerable: true
+    relevant_chunk_ids:
+      - dc30228f-8bd7-5103-b6a8-fa006af9b9ae
+    expected_sources:
+      - doc_id: POL-COMM-001-v1
+        section: "3"
+  - case_id: commercial-flood-extension
+    question: When does the commercial policy cover direct flood damage?
+    policy_id: COMM-001
+    loss_date: "2025-06-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 2447e25d-e070-5498-bede-4d682663869d
+    expected_sources:
+      - doc_id: POL-COMM-001-v1
+        section: "4"
+  - case_id: commercial-records-and-mitigation
+    question: What records and mitigation steps are expected after commercial property damage?
+    policy_id: COMM-001
+    loss_date: "2025-06-01"
+    answerable: true
+    relevant_chunk_ids:
+      - e4d8f90b-2fac-5595-9a7a-d0cff559b3cb
+    expected_sources:
+      - doc_id: POL-COMM-001-v1
+        section: "5"
+  - case_id: fair-handling-unresolved-evidence
+    question: Is a missing document or unresolved technical issue proof that an exclusion applies?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 3b047330-0682-502e-b43b-64e9774bea8e
+    expected_sources:
+      - doc_id: PROC-CLAIMS-FAIR-HANDLING-01
+        section: "2"
+  - case_id: fair-guidance-on-progress
+    question: What guidance should a customer receive about claim progress and material delay?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    guidance_as_of: "2026-01-01"
+    answerable: true
+    relevant_chunk_ids:
+      - 83cbbcb0-3c38-5bae-a203-219b372e0110
+      - 4a693ac9-bbc9-550c-9b38-b802c1198484
+    expected_sources:
+      - doc_id: REG-CLAIMS-HANDLING-SYNTH-01
+        section: "2"
+      - doc_id: PROC-CLAIMS-FAIR-HANDLING-01
+        section: "1"
+  - case_id: home-unspecified-flood-limit
+    question: What exact monetary flood limit applies to this HOME-002 claim?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: false
+    relevant_chunk_ids: []
+  - case_id: home-unspecified-accommodation-cover
+    question: How much does HOME-002 pay for temporary hotel accommodation after a loss?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: false
+    relevant_chunk_ids: []
+  - case_id: home-scheduled-excess-amount
+    question: What exact policy excess is shown for this HOME-002 claim?
+    policy_id: HOME-002
+    loss_date: "2025-03-01"
+    answerable: false
+    relevant_chunk_ids: []
+  - case_id: motor-hire-car-cover
+    question: For how many days does MOTOR-001 pay for a hire car after an accident?
+    policy_id: MOTOR-001
+    loss_date: "2025-03-15"
+    answerable: false
+    relevant_chunk_ids: []
+  - case_id: commercial-business-interruption
+    question: What business interruption payment applies while COMM-001 premises are closed?
+    policy_id: COMM-001
+    loss_date: "2025-06-01"
+    answerable: false
+    relevant_chunk_ids: []
+  - case_id: commercial-unspecified-flood-limit
+    question: What exact monetary flood limit applies to this COMM-001 loss?
+    policy_id: COMM-001
+    loss_date: "2025-06-01"
+    answerable: false
+    relevant_chunk_ids: []
