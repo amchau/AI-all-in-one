@@ -1,6 +1,6 @@
 # Stage 2 - Insurance Knowledge System (Enterprise RAG)
 
-Status: **IN PROGRESS** - phases 2.0-2.3 complete; Phase 2.4 hybrid retrieval and reranking next
+Status: **IN PROGRESS** - Phase 2.4 retrieval modes deployed; top_k=20 generation follow-up remains; Phase 2.5 evaluation is next
 Pattern: #1 Enterprise RAG / Knowledge Intelligence
 Builds on: Stage 1 platform (kind, LiteLLM -> Groq, Qdrant, Postgres, MinIO, OTEL)
 
@@ -148,8 +148,8 @@ Phase 2.5 evaluation calibrates one. Upstream failures return sanitized service 
 | 2.1 Corpus | `data/` Markdown corpus + `scripts/render_corpus.py` -> PDFs and metadata manifest | Complete: 8 PDFs, validated front matter, metadata/hash manifest, deterministic rerender; 6 focused tests passed |
 | 2.2 Ingestion | `rag/ingestion` validates manifest, parses/chunks PDFs, embeds through LiteLLM, stores raw PDFs in MinIO, registers lineage in Postgres, and upserts dense vectors to Qdrant; Kubernetes Job | Complete: 8 documents/44 chunks registered; 44 Qdrant points and 8 MinIO objects; dedicated-role rerun completed with zero changes/writes |
 | 2.3 Dense RAG | Temporal source selection, dense search, grounded generation, validated inline citations; `/v1/rag/query` | Live smoke query returns cited answer; unit tests verify no-evidence abstention |
-| 2.4 Hybrid + rerank | sparse vectors, RRF fusion, metadata filters, reranker | Modes `hybrid`, `hybrid_rerank` work |
-| 2.5 Evaluation | `tests/evaluation/golden.yaml` (~30 Qs), `run_rag_eval.py`, report in `docs/eval/` | Report compares 3 modes on recall@5, MRR, citation accuracy, latency |
+| 2.4 Hybrid + rerank | Sparse BM25 vectors, native Qdrant RRF fusion, shared metadata filters, TEI reranking, and backward-compatible API modes | Deployed; 44 points verified with dense+sparse vectors and ingestion no-op verified. Close after bounded-generation fix passes top_k=20 tests; see tracked follow-up below |
+| 2.5 Evaluation | `tests/evaluation/golden.yaml` (~30 Qs), `run_rag_eval.py`, report in `docs/eval/` | Report compares 3 modes at fixed top_k=5 on recall@5, MRR, citation accuracy, answerability, latency, and request failures; record known top_k=20 issue separately |
 | 2.6 Observability + docs | spans `rag.embed`, `rag.search`, `rag.rerank`, `rag.generate` with attributes; smoke test extended; README + stage doc | Trace shows full RAG path; `smoke-test.sh` covers RAG |
 
 Testing: unit tests for chunker, payload builder, source-date selection, prompt assembly, citation
@@ -246,7 +246,109 @@ ADR-009 for query-time source selection, citations, abstention, and read-only ac
 Phase 2.3 execution record (2026-10-03): the user reports that the dedicated `rag_query` password
 was set, the API image was rebuilt and deployed, the service was port-forwarded, and the smoke test
 completed successfully with a cited query response. The assistant did not independently repeat the
-live query. Dense RAG is complete; Phase 2.4 hybrid retrieval and reranking is next.
+live query. Dense RAG is complete; Phase 2.4 hybrid retrieval and reranking is deployed, with the
+top_k=20 generation follow-up tracked below.
+
+### Phase 2.4 implementation contract
+
+- **Sparse representation:** use FastEmbed `Qdrant/bm25` with separate passage/query encoding.
+     Store each chunk as named `dense` plus named `sparse` vectors in `insurance_docs`. Include the
+     sparse model identity and vector-schema revision in the ingestion fingerprint so existing
+     dense-only registry entries are rebuilt rather than incorrectly treated as no-ops.
+- **Qdrant upgrade:** named vectors can be added to an existing collection starting with Qdrant
+     1.18. The cluster currently has 1.15.4, so take and download a collection snapshot, then run
+     `QDRANT_SNAPSHOT_CONFIRMED=1 ./scripts/upgrade-qdrant.sh`. It upgrades through 1.16.3, 1.17.1,
+     1.18.3, and 1.19.1; this avoids the unsupported direct 1.15-to-1.17 storage jump. The
+     collection snapshot must be downloaded before the helper runs. The Python client is pinned
+     to 1.19.1 to match the final server.
+- **Migration and idempotency:** use Qdrant's create-named-vector operation to add sparse config
+     in place; never delete/recreate the collection. Rerun the normal ingestion Job over all 8 documents
+     and 44 chunks, preserving deterministic point IDs and dense vectors' model. Verify the first
+     run repairs every point with both vectors and the second run is a no-op. Ingestion writes both
+     named vectors atomically per point; a partial request failure is retried through the existing
+     reconciliation path.
+- **Hybrid retrieval:** support `dense`, `hybrid`, and `hybrid_rerank` request modes; default to
+     `dense` for compatibility. Apply the resolved eligible-document filter to both dense and
+     sparse Qdrant prefetches. Fuse ranks using Qdrant's equal-weight RRF; do not tune weights or
+     introduce score thresholds before Phase 2.5 evaluation.
+- **Candidate bounds:** `top_k` remains the number of chunks returned (1-20). Hybrid prefetches
+     use `candidate_k = min(50, max(20, 4 * top_k))`; `hybrid` returns its top `top_k` fused points,
+     while `hybrid_rerank` fuses and reranks at most `candidate_k`, then returns top `top_k`.
+- **Reranking:** call the existing TEI `reranker:8080/rerank` service only for
+     `hybrid_rerank`. Sort its indexed scores explicitly and validate the response shape, indices,
+     and finite scores. A TEI outage or malformed response returns a sanitized dependency error;
+     never silently return hybrid results under the reranked mode.
+- **Response compatibility:** include the effective `mode`, preserve the existing `score` field
+     as the final mode-specific ranking score, and add optional `dense_score`, `hybrid_score`, and
+     `rerank_score` fields. Dense results expose `dense_score`; hybrid results expose the Qdrant
+     fused `hybrid_score`; reranked results retain `hybrid_score` and expose `rerank_score` as the
+     final `score`. Qdrant's fused response does not expose each prefetch's raw component score;
+     do not issue duplicate searches just to manufacture those fields.
+- **Grounding and tracing:** generate from the final ordered result list, assign citation refs in
+     that order, and retain the existing citation validation/abstention behavior. Add spans for
+     sparse query encoding and `rag.rerank`; record mode, model, candidate/result counts, scores,
+     and latency, but no raw question or chunk text.
+- **Generation 502 follow-up (2026-10-04):** the live `hybrid` smoke returned an answer at
+     `top_k=8`, while the diagnostic `top_k=20` request returned HTTP 502. LiteLLM logs show Groq
+     `json_validate_failed` and empty `failed_generation`; the 800-token completion cap is not
+     proven to be the cause. ADR-010 now records the remediation decision: keep retrieval/response
+     `top_k` as requested, initially generate from the first 8 whole ranked chunks, and retry once
+     with 4 chunks only for that specific Groq JSON-validation error. Preserve 800 completion
+     tokens and the existing sanitized 502 behavior after a failed retry. Do not relabel an
+     upstream failure as insufficient evidence.
+- **Tests and exit:** unit-test sparse encoding conversion, in-place schema update, dual-vector
+     upsert, fingerprint migration, no-op rerun, filtered RRF, candidate bounds, reranker ordering,
+     malformed/upstream failures, and citation mapping. Add tests proving `top_k=20` returns up to
+     20 chunks while generation uses bounded evidence, only the allowlisted error retries once,
+     and citations remain within the supplied evidence. Run integration checks against the running
+     cluster: reingest, verify 44 Qdrant points remain and all carry both named vectors, then smoke
+     all three modes including `hybrid` at `top_k=20`. Phase 2.4 demonstrates working behavior only;
+     Phase 2.5 owns comparative quality claims and RRF tuning.
+
+### Phase 2.4 outstanding closure item
+
+Observed 2026-10-04: the deployed Qdrant `1.19.1` collection has 44 points, all with valid dense
+and populated sparse vectors; Postgres has 8 documents/44 chunks; the latest ingestion rerun was a
+no-op. The live API returned cited answers for dense and hybrid-rerank at `top_k=5`. Hybrid
+returned `insufficient_evidence` at `top_k=5` and a cited answer at `top_k=8`. A hybrid
+`top_k=20` diagnostic returned HTTP 502. LiteLLM logs identify Groq `json_validate_failed` with
+empty `failed_generation`; they do not prove that the 800-token completion limit caused it.
+
+Required before declaring Phase 2.4 closed or claiming unrestricted `top_k` support:
+
+1. Keep request `top_k` controlling retrieval and response size, but pass only the highest-ranked
+      8 whole chunks to initial generation. Return the full retrieved chunk list unchanged.
+2. Retry once with the top 4 whole chunks only when the allowlisted Groq error code is
+      `json_validate_failed`; do not retry unrelated errors or malformed successful responses.
+3. Preserve the 800 completion-token cap and sanitized 502 after a failed retry. Do not convert a
+      provider failure into `insufficient_evidence`, which remains reserved for a successful model
+      abstention, no usable evidence, or invalid citations.
+4. Test top_k=20 response size, 8-to-4 retry, retry restrictions, and citation mapping. Then
+      smoke top_k=20 through the deployed hybrid endpoint and confirm the error no longer occurs.
+
+This item does not block Phase 2.5's fixed top_k=5 baseline evaluation. Report provider failures
+separately from answerability/abstention results, and keep this follow-up visible until closed.
+
+### Phase 2.5 evaluation plan
+
+- Build an approximately 30-question synthetic golden set covering home, motor, and commercial
+     policies; endorsements; procedures/regulatory guidance; date boundaries; exact identifiers and
+     lexical traps; and unanswerable questions. Annotate each query with its policy/date inputs,
+     answerability, and expected relevant chunk IDs (plus required facts where citation/answer checks
+     need them).
+- Run `dense`, `hybrid`, and `hybrid_rerank` against the same query, temporal filters, and
+     `top_k=5`. Keep RRF equally weighted for the baseline. Treat `top_k=8` probes as diagnostics,
+     not part of the primary comparison.
+- Measure retrieval recall@5 and MRR from expected chunk IDs; citation accuracy against annotated
+     relevant evidence; answerability/abstention accuracy; median/p95 latency; token usage where
+     available; and sanitized request-failure rate. Do not count HTTP/model failures as
+     `insufficient_evidence` or silently exclude them.
+- Add `tests/evaluation/golden.yaml` and `run_rag_eval.py`; write reproducible results and
+     methodology to `docs/eval/stage2-report.md`. Any RRF tuning must use a held-out split and report
+     its effect on all three modes' quality and latency.
+- Phase 2.5 exits when the report compares all modes on the full golden set, lists failures and
+     answerability outcomes, and supports any quality claims with measured results. It can proceed
+     while the Phase 2.4 top_k=20 remediation remains tracked.
 
 ## 7. Planned file additions
 

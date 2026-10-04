@@ -81,6 +81,30 @@ if [[ "${current_context}" != "${EXPECTED_CONTEXT}" ]]; then
 fi
 KUBECTL=(kubectl --context "${EXPECTED_CONTEXT}")
 
+qdrant_lookup_file="$(mktemp)"
+if "${KUBECTL[@]}" -n ai-platform get deployment qdrant >"${qdrant_lookup_file}" 2>&1; then
+  rm -f "${qdrant_lookup_file}"
+  qdrant_image="$("${KUBECTL[@]}" -n ai-platform get deployment qdrant \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="qdrant")].image}')"
+  if [[ "${qdrant_image}" != "qdrant/qdrant:v1.19.1" ]]; then
+    echo "Qdrant image is ${qdrant_image}; run the snapshot-backed staged upgrade before deploy"
+    exit 1
+  fi
+  ready_qdrant_image="$("${KUBECTL[@]}" -n ai-platform get pods -l app=qdrant \
+    -o jsonpath='{.items[?(@.status.containerStatuses[0].ready==true)].spec.containers[0].image}')"
+  if [[ "${ready_qdrant_image}" != "qdrant/qdrant:v1.19.1" ]]; then
+    echo "Qdrant v1.19.1 is not ready; wait for the snapshot-backed staged upgrade before deploy"
+    exit 1
+  fi
+elif ! printf '%s\n' 'Error from server (NotFound): deployments.apps "qdrant" not found' \
+  | cmp -s - "${qdrant_lookup_file}"; then
+  cat "${qdrant_lookup_file}" >&2
+  rm -f "${qdrant_lookup_file}"
+  exit 1
+else
+  rm -f "${qdrant_lookup_file}"
+fi
+
 if job_status="$("${KUBECTL[@]}" -n ai-platform get job rag-ingest -o jsonpath='{.status.active}' 2>&1)"; then
   if [[ "${job_status}" =~ ^[1-9][0-9]*$ ]]; then
     echo "Refusing to deploy while rag-ingest is active"

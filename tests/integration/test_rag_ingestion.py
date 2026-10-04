@@ -14,6 +14,7 @@ from rag.ingestion.embed import LiteLLMEmbedder
 from rag.ingestion.manifest import load_manifest
 from rag.ingestion.pipeline import ingest_documents
 from rag.ingestion.registry import PostgresRegistry
+from rag.ingestion.sparse import FastEmbedSparseEncoder
 from rag.ingestion.settings import IngestionSettings
 from rag.ingestion.store import MinioPdfStore, QdrantDenseStore, object_key_for
 
@@ -76,6 +77,10 @@ def test_running_stack_ingests_and_second_run_is_noop() -> None:
                     master_key=settings.litellm_master_key,
                     model=settings.embedding_model,
                 ),
+                "sparse_embedder": FastEmbedSparseEncoder(
+                    model_name=settings.sparse_model,
+                ),
+                "sparse_model": settings.sparse_model,
                 "embedding_model": settings.embedding_model,
             }
             first_summary = ingest_documents(documents, **dependencies)
@@ -149,7 +154,7 @@ def test_running_stack_ingests_and_second_run_is_noop() -> None:
             collection_name="insurance_docs",
             ids=[str(row[0]) for row in registered_chunks],
             with_payload=True,
-            with_vectors=False,
+            with_vectors=True,
         )
         assert {str(point.id) for point in qdrant_points} == {
             str(row[0]) for row in registered_chunks
@@ -157,6 +162,9 @@ def test_running_stack_ingests_and_second_run_is_noop() -> None:
         registered_by_id = {str(row[0]): row for row in registered_chunks}
         for point in qdrant_points:
             row = registered_by_id[str(point.id)]
+            assert set(point.vector) == {"dense", "sparse"}
+            assert len(point.vector["dense"]) == 1536
+            assert len(point.vector["sparse"].indices) == len(point.vector["sparse"].values)
             assert point.payload["doc_id"] == row[1]
             assert point.payload["content_hash"] == row[2].strip()
             assert point.payload["page"] == row[3]

@@ -31,7 +31,7 @@ class RagQueryInput(BaseModel):
     loss_date: date
     guidance_as_of: date | None = None
     top_k: int = Field(default=5, ge=1, le=20)
-    mode: Literal["dense"] = "dense"
+    mode: Literal["dense", "hybrid", "hybrid_rerank"] = "dense"
 
 
 class Citation(BaseModel):
@@ -55,6 +55,9 @@ class RetrievedChunk:
     page: int
     score: float
     text: str
+    dense_score: float | None = None
+    hybrid_score: float | None = None
+    rerank_score: float | None = None
 
     def citation(self) -> Citation:
         return Citation(
@@ -84,3 +87,4 @@ class RagQueryResult:
     chunks: list[RetrievedChunk]
     model: str
     latency_ms: int
+    mode: Literal["dense", "hybrid", "hybrid_rerank"] = "dense"

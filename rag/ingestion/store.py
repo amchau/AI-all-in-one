@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from rag.ingestion.models import ManifestDocument
+from rag.ingestion.sparse import SparseVectorData
 
 
 _PATH_COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
@@ -78,6 +79,11 @@ class QdrantDenseStore:
                         distance=models.Distance.COSINE,
                     )
                 },
+                sparse_vectors_config={
+                    "sparse": models.SparseVectorParams(
+                        modifier=models.Modifier.IDF,
+                    )
+                },
             )
             return
 
@@ -88,6 +94,22 @@ class QdrantDenseStore:
         dense = vectors["dense"]
         if dense.size != self._dimensions or dense.distance.value != "Cosine":
             raise RuntimeError("Qdrant dense vector configuration does not match ingestion")
+        sparse_vectors = collection.config.params.sparse_vectors or {}
+        if "sparse" not in sparse_vectors:
+            self._client.create_vector_name(
+                collection_name=self._collection,
+                vector_name="sparse",
+                vector_name_config=models.SparseVectorNameConfig(
+                    sparse=models.SparseVectorConfig(
+                        modifier=models.Modifier.IDF,
+                    ),
+                ),
+            )
+            collection = self._client.get_collection(self._collection)
+            sparse_vectors = collection.config.params.sparse_vectors or {}
+        sparse = sparse_vectors.get("sparse")
+        if sparse is None or sparse.modifier != models.Modifier.IDF:
+            raise RuntimeError("Qdrant sparse vector configuration does not match ingestion")
 
     def point_ids_match(
         self,
@@ -150,21 +172,34 @@ class QdrantDenseStore:
         self,
         point_ids: list[str],
         vectors: list[list[float]],
+        sparse_vectors: list[SparseVectorData],
         payloads: list[dict[str, Any]],
     ) -> None:
         from qdrant_client import models
 
-        if not (len(point_ids) == len(vectors) == len(payloads)):
-            raise ValueError("Qdrant point IDs, vectors, and payloads must have equal lengths")
+        if not (len(point_ids) == len(vectors) == len(sparse_vectors) == len(payloads)):
+            raise ValueError("Qdrant point IDs, vectors, sparse vectors, and payloads must have equal lengths")
         if not point_ids:
             return
         points = [
             models.PointStruct(
                 id=point_id,
-                vector={"dense": vector},
+                vector={
+                    "dense": vector,
+                    "sparse": models.SparseVector(
+                        indices=sparse_vector.indices,
+                        values=sparse_vector.values,
+                    ),
+                },
                 payload=payload,
             )
-            for point_id, vector, payload in zip(point_ids, vectors, payloads, strict=True)
+            for point_id, vector, sparse_vector, payload in zip(
+                point_ids,
+                vectors,
+                sparse_vectors,
+                payloads,
+                strict=True,
+            )
         ]
         self._client.upsert(collection_name=self._collection, points=points, wait=True)
 

@@ -51,6 +51,7 @@ def test_rag_query_returns_validated_citations_and_chunks(api_client, monkeypatc
         page=3,
         score=0.82,
         text="Flood damage is covered subject to limits.",
+        dense_score=0.82,
     )
     result = RagQueryResult(
         answer=GroundedAnswer(
@@ -80,10 +81,24 @@ def test_rag_query_returns_validated_citations_and_chunks(api_client, monkeypatc
     assert payload["citations"][0]["page"] == 3
     assert payload["chunks"][0]["chunk_id"] == "chunk-1"
     assert payload["chunks"][0]["ref"] == "C1"
+    assert payload["mode"] == "dense"
+    assert payload["chunks"][0]["score"] == 0.82
+    assert payload["chunks"][0]["dense_score"] == 0.82
+    assert payload["chunks"][0]["hybrid_score"] is None
+    assert payload["chunks"][0]["rerank_score"] is None
     assert payload["trace_id"]
 
 
-def test_rag_query_rejects_hybrid_mode(api_client) -> None:
+def test_rag_query_accepts_hybrid_mode(api_client, monkeypatch) -> None:
+    result = RagQueryResult(
+        answer=GroundedAnswer(status="insufficient_evidence", answer="", citations=[]),
+        chunks=[],
+        model="gpt-oss-20b",
+        latency_ms=120,
+        mode="hybrid",
+    )
+    monkeypatch.setattr(main, "execute_rag_query", lambda request: result)
+
     response = api_client.post(
         "/v1/rag/query",
         json={
@@ -94,7 +109,62 @@ def test_rag_query_rejects_hybrid_mode(api_client) -> None:
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert response.json()["mode"] == "hybrid"
+
+
+def test_rag_query_serializes_rerank_score_fields(api_client, monkeypatch) -> None:
+    citation = Citation(
+        ref="C1",
+        chunk_id="chunk-1",
+        doc_id="POL-HOME-002-v2",
+        title="Home Policy",
+        section="4",
+        clause="4.2",
+        page=3,
+    )
+    chunk = RetrievedChunk(
+        chunk_id="chunk-1",
+        ref="C1",
+        doc_id="POL-HOME-002-v2",
+        title="Home Policy",
+        section="4",
+        clause="4.2",
+        page=3,
+        score=0.9,
+        text="Flood extension wording.",
+        hybrid_score=0.04,
+        rerank_score=0.9,
+    )
+    result = RagQueryResult(
+        answer=GroundedAnswer(
+            status="answered",
+            answer="Flood extension applies. [C1]",
+            citations=[citation],
+        ),
+        chunks=[chunk],
+        model="gpt-oss-20b",
+        latency_ms=120,
+        mode="hybrid_rerank",
+    )
+    monkeypatch.setattr(main, "execute_rag_query", lambda request: result)
+
+    response = api_client.post(
+        "/v1/rag/query",
+        json={
+            "question": "Is flood damage covered?",
+            "policy_id": "HOME-002",
+            "loss_date": "2025-03-01",
+            "mode": "hybrid_rerank",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "hybrid_rerank"
+    assert payload["chunks"][0]["score"] == 0.9
+    assert payload["chunks"][0]["hybrid_score"] == 0.04
+    assert payload["chunks"][0]["rerank_score"] == 0.9
 
 
 def test_rag_query_sanitizes_dependency_errors(api_client, monkeypatch) -> None:

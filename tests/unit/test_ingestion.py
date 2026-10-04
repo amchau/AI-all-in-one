@@ -300,6 +300,7 @@ def test_document_fingerprint_is_stable_and_tracks_pipeline_identity() -> None:
         "document": document,
         "pipeline_revision": "ingestion-v1",
         "embedding_model": "embed-small",
+        "sparse_model": "Qdrant/bm25",
         "vector_schema_revision": "dense-1536-v1",
     }
 
@@ -307,7 +308,11 @@ def test_document_fingerprint_is_stable_and_tracks_pipeline_identity() -> None:
     second = content_fingerprint(**arguments)
     changed_pipeline = content_fingerprint(**{**arguments, "pipeline_revision": "ingestion-v2"})
     changed_model = content_fingerprint(**{**arguments, "embedding_model": "embed-next"})
+    changed_sparse_model = content_fingerprint(
+        **{**arguments, "sparse_model": "Qdrant/bm25-next"}
+    )
 
     assert first == second
     assert changed_pipeline != first
     assert changed_model != first
+    assert changed_sparse_model != first

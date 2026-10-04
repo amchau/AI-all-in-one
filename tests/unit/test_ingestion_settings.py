@@ -49,6 +49,14 @@ def test_minio_secure_rejects_invalid_boolean(monkeypatch) -> None:
         IngestionSettings.from_environment()
 
 
+def test_sparse_model_is_configurable_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("SPARSE_MODEL", "Qdrant/bm25-test")
+
+    settings = IngestionSettings.from_environment()
+
+    assert settings.sparse_model == "Qdrant/bm25-test"
+
+
 def test_settings_reject_whitespace_only_required_secret(monkeypatch) -> None:
     monkeypatch.setenv("LITELLM_MASTER_KEY", "   ")
     monkeypatch.setenv("MINIO_ACCESS_KEY", "test-access")

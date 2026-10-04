@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
+from threading import Lock
 from contextlib import asynccontextmanager
 import logging
 from typing import Any, Literal
@@ -21,6 +23,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from qdrant_client import QdrantClient
 
 from rag.ingestion.embed import LiteLLMEmbedder
+from rag.ingestion.sparse import FastEmbedSparseEncoder
 from rag.retrieval.generation import LiteLLMAnswerGenerator
 from rag.retrieval.models import (
     Citation,
@@ -29,6 +32,7 @@ from rag.retrieval.models import (
     RetrievedChunk,
 )
 from rag.retrieval.registry import PostgresSourceRegistry
+from rag.retrieval.rerank import TeiReranker
 from rag.retrieval.service import QueryDependencyError, RagQueryService
 from rag.retrieval.sources import (
     AmbiguousBasePolicyError,
@@ -56,6 +60,9 @@ class Settings(BaseSettings):
     postgres_query_password: str = Field(default="", repr=False)
     qdrant_url: str = "http://qdrant.ai-platform.svc.cluster.local:6333"
     embedding_model: str = "embed-small"
+    sparse_model: str = "Qdrant/bm25"
+    reranker_url: str = "http://reranker.ai-platform.svc.cluster.local:8080"
+    reranker_model: str = "BAAI/bge-reranker-base"
 
 
 settings = Settings()
@@ -77,6 +84,8 @@ def setup_tracing() -> None:
 setup_tracing()
 tracer = trace.get_tracer(__name__)
 HTTPXClientInstrumentor().instrument()
+_sparse_encoder_lock = Lock()
+_sparse_encoders: dict[str, FastEmbedSparseEncoder] = {}
 
 
 class InvestigateRequest(BaseModel):
@@ -101,10 +110,14 @@ class RagChunkResponse(BaseModel):
     clause: str | None
     page: int
     score: float
+    dense_score: float | None
+    hybrid_score: float | None
+    rerank_score: float | None
     text: str
 
 
 class RagQueryResponse(BaseModel):
+    mode: Literal["dense", "hybrid", "hybrid_rerank"]
     status: Literal["answered", "insufficient_evidence"]
     answer: str
     citations: list[Citation]
@@ -140,6 +153,18 @@ def get_postgres_dsn() -> str:
     )
 
 
+def get_sparse_encoder(model_name: str) -> FastEmbedSparseEncoder:
+    with _sparse_encoder_lock:
+        encoder = _sparse_encoders.get(model_name)
+        if encoder is None:
+            encoder = FastEmbedSparseEncoder(
+                model_name=model_name,
+                cache_dir=Path("/tmp/fastembed"),
+            )
+            _sparse_encoders[model_name] = encoder
+        return encoder
+
+
 def execute_rag_query(request: RagQueryInput) -> RagQueryResult:
     def record_embedding_usage(token_counts: dict[str, int]) -> None:
         span = trace.get_current_span()
@@ -159,7 +184,17 @@ def execute_rag_query(request: RagQueryInput) -> RagQueryResult:
                     model=settings.embedding_model,
                     usage_callback=record_embedding_usage,
                 ),
+                sparse_embedder=(
+                    get_sparse_encoder(settings.sparse_model)
+                    if request.mode != "dense"
+                    else None
+                ),
                 qdrant_client=qdrant_client,
+                reranker=TeiReranker(
+                    client=http_client,
+                    base_url=settings.reranker_url,
+                    model_name=settings.reranker_model,
+                ),
                 answer_generator=LiteLLMAnswerGenerator(
                     client=http_client,
                     base_url=settings.litellm_url,
@@ -314,6 +349,7 @@ def rag_query(request: RagQueryInput) -> RagQueryResponse:
         span_context = trace.get_current_span().get_span_context()
         trace_id = f"{span_context.trace_id:032x}" if span_context.is_valid else None
         return RagQueryResponse(
+            mode=result.mode,
             status=result.answer.status,
             answer=result.answer.answer,
             citations=result.answer.citations,
@@ -327,6 +363,9 @@ def rag_query(request: RagQueryInput) -> RagQueryResponse:
                     clause=chunk.clause,
                     page=chunk.page,
                     score=chunk.score,
+                    dense_score=chunk.dense_score,
+                    hybrid_score=chunk.hybrid_score,
+                    rerank_score=chunk.rerank_score,
                     text=chunk.text,
                 )
                 for chunk in result.chunks

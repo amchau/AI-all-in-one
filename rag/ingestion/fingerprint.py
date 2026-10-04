@@ -17,10 +17,11 @@ def content_fingerprint(
     pipeline_revision: str,
     embedding_model: str,
     vector_schema_revision: str,
+    sparse_model: str = "none",
 ) -> str:
     """Fingerprint all inputs that determine the persisted chunks and vectors."""
-    if not pipeline_revision or not embedding_model or not vector_schema_revision:
-        raise ValueError("pipeline, embedding, and vector schema identities are required")
+    if not pipeline_revision or not embedding_model or not vector_schema_revision or not sparse_model:
+        raise ValueError("pipeline, embedding, sparse, and vector schema identities are required")
     value = {
         "metadata": dict(document.metadata),
         "source_sha256": document.source_sha256,
@@ -30,6 +31,7 @@ def content_fingerprint(
         "pipeline_revision": pipeline_revision,
         "tokenizer": TOKENIZER_NAME,
         "embedding_model": embedding_model,
+        "sparse_model": sparse_model,
         "vector_schema_revision": vector_schema_revision,
     }
     canonical = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))

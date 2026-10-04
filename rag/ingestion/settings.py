@@ -13,6 +13,7 @@ class IngestionSettings:
     litellm_url: str
     litellm_master_key: str
     embedding_model: str
+    sparse_model: str
     postgres_dsn: str | None
     postgres_host: str
     postgres_port: int
@@ -39,6 +40,7 @@ class IngestionSettings:
             ),
             litellm_master_key=os.getenv("LITELLM_MASTER_KEY", ""),
             embedding_model=os.getenv("LITELLM_EMBEDDING_MODEL", "embed-small"),
+            sparse_model=os.getenv("SPARSE_MODEL", "Qdrant/bm25"),
             postgres_dsn=postgres_dsn,
             postgres_host=os.getenv(
                 "POSTGRES_HOST", "postgres.ai-platform.svc.cluster.local"
@@ -78,6 +80,7 @@ class IngestionSettings:
             {
                 "LITELLM_URL": self.litellm_url,
                 "LITELLM_EMBEDDING_MODEL": self.embedding_model,
+                "SPARSE_MODEL": self.sparse_model,
                 "QDRANT_URL": self.qdrant_url,
                 "MINIO_ENDPOINT": self.minio_endpoint,
             }

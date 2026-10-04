@@ -9,7 +9,7 @@ Learning + portfolio build of an **Enterprise AI Decision & Operations Platform*
 Kubernetes. Built in 10 stages (see [docs/ROADMAP.md](docs/ROADMAP.md)). First business domain:
 insurance claims investigation.
 
-- Current stage: **2 - Document ingestion + RAG** (Phases 2.0-2.3 complete; Phase 2.4 hybrid retrieval next; plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
+- Current stage: **2 - Document ingestion + RAG** (Phases 2.0-2.3 complete; Phase 2.4 deployed with a tracked top_k=20 generation failure; Phase 2.5 evaluation is next; plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
 ## Working agreement
@@ -35,7 +35,7 @@ insurance claims investigation.
 | Namespace | `ai-platform` | `infrastructure/kubernetes/base/` (kustomize) |
 | API | FastAPI `apps/ai-api` + shared `rag/` package | image `localhost/ai-api:stage2` |
 | LLM gateway | LiteLLM, alias `gpt-oss-20b` -> `groq/openai/gpt-oss-20b` | `litellm-configmap.yaml` |
-| Vector DB | Qdrant v1.15.4 | `qdrant.yaml` |
+| Vector DB | Qdrant v1.19.1; named-vector changes use `qdrant-client` v1.19.1 | `qdrant.yaml` |
 | Relational | PostgreSQL 16 | `postgres.yaml` |
 | Object store | MinIO (`cgr.dev/chainguard/minio`) | `minio.yaml` |
 | Tracing | OTEL Collector, `debug` exporter (logs) | `otel-collector*.yaml` |
@@ -49,6 +49,7 @@ insurance claims investigation.
 ./scripts/kind-create.sh        # create cluster (podman provider)
 ./scripts/build-ai-api.sh       # build + kind load ai-api image
 ./scripts/deploy-stage1.sh      # .env -> secret stage1-secrets, apply kustomize, wait rollouts
+QDRANT_SNAPSHOT_CONFIRMED=1 ./scripts/upgrade-qdrant.sh # staged 1.15 -> 1.19 upgrade after snapshot
 ./scripts/provision-rag-ingest-role.sh # create least-privilege rag_ingest role/schema ownership
 ./scripts/provision-rag-query-role.sh  # create read-only rag_query role for Phase 2.3
 ./scripts/port-forward.sh       # ai-api on localhost:8000

@@ -17,6 +17,7 @@ from rag.ingestion.embed import LiteLLMEmbedder
 from rag.ingestion.manifest import load_manifest
 from rag.ingestion.pipeline import ingest_documents
 from rag.ingestion.registry import PostgresRegistry
+from rag.ingestion.sparse import FastEmbedSparseEncoder
 from rag.ingestion.settings import IngestionSettings
 from rag.ingestion.store import MinioPdfStore, QdrantDenseStore
 
@@ -72,7 +73,11 @@ def run() -> int:
                         master_key=settings.litellm_master_key,
                         model=settings.embedding_model,
                     ),
+                    sparse_embedder=FastEmbedSparseEncoder(
+                        model_name=settings.sparse_model,
+                    ),
                     embedding_model=settings.embedding_model,
+                    sparse_model=settings.sparse_model,
                 )
         finally:
             qdrant_client.close()

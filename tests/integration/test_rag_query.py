@@ -15,7 +15,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_dense_query_returns_grounded_citations_without_writes() -> None:
+def test_retrieval_modes_return_grounded_citations_without_writes() -> None:
     api_url = os.getenv("RAG_QUERY_API_URL", "http://127.0.0.1:8000")
     postgres_dsn = os.getenv("POSTGRES_QUERY_DSN", "")
     qdrant_url = os.getenv("QDRANT_URL", "http://127.0.0.1:6333")
@@ -168,31 +168,34 @@ def test_dense_query_returns_grounded_citations_without_writes() -> None:
                 connection.execute("SELECT source_sha256 FROM rag.documents LIMIT 1")
         points_before = qdrant.count("insurance_docs", exact=True).count
 
-        response = httpx.post(
-            f"{api_url.rstrip('/')}/v1/rag/query",
-            json={
-                "question": "What water damage is covered under policy HOME-002?",
-                "policy_id": "HOME-002",
-                "loss_date": "2025-03-01",
-                "guidance_as_of": "2026-01-01",
-                "top_k": 5,
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        assert payload["status"] == "answered"
-        assert payload["answer"]
-        assert payload["citations"]
-        chunks_by_id = {chunk["chunk_id"]: chunk for chunk in payload["chunks"]}
-        refs_by_chunk_id = {
-            chunk["chunk_id"]: chunk["ref"] for chunk in payload["chunks"]
-        }
-        assert chunks_by_id
-        for citation in payload["citations"]:
-            assert citation["chunk_id"] in chunks_by_id
-            assert citation["ref"] == refs_by_chunk_id[citation["chunk_id"]]
-            assert f"[{citation['ref']}]" in payload["answer"]
+        for mode in ("dense", "hybrid", "hybrid_rerank"):
+            response = httpx.post(
+                f"{api_url.rstrip('/')}/v1/rag/query",
+                json={
+                    "question": "What water damage is covered under policy HOME-002?",
+                    "policy_id": "HOME-002",
+                    "loss_date": "2025-03-01",
+                    "guidance_as_of": "2026-01-01",
+                    "top_k": 5,
+                    "mode": mode,
+                },
+                timeout=60,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            assert payload["mode"] == mode
+            assert payload["status"] == "answered"
+            assert payload["answer"]
+            assert payload["citations"]
+            chunks_by_id = {chunk["chunk_id"]: chunk for chunk in payload["chunks"]}
+            refs_by_chunk_id = {
+                chunk["chunk_id"]: chunk["ref"] for chunk in payload["chunks"]
+            }
+            assert chunks_by_id
+            for citation in payload["citations"]:
+                assert citation["chunk_id"] in chunks_by_id
+                assert citation["ref"] == refs_by_chunk_id[citation["chunk_id"]]
+                assert f"[{citation['ref']}]" in payload["answer"]
 
         with psycopg.connect(postgres_dsn, connect_timeout=5) as connection:
             documents_after = connection.execute(

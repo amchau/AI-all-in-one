@@ -11,6 +11,7 @@ import pytest
 from rag.ingestion.manifest import load_manifest
 from rag.ingestion.models import Chunk, ManifestDocument, PageText
 from rag.ingestion.pipeline import DocumentState, IngestionSummary, ingest_documents
+from rag.ingestion.sparse import SparseVectorData
 from rag.ingestion.store import object_key_for
 
 
@@ -87,6 +88,7 @@ class FakePdfStore:
 class FakeVectorStore:
     def __init__(self) -> None:
         self.points: dict[str, dict[str, object]] = {}
+        self.sparse_vectors: dict[str, SparseVectorData] = {}
         self.upsert_calls = 0
         self.delete_calls = 0
         self.fail_upsert_once = False
@@ -130,6 +132,7 @@ class FakeVectorStore:
         self,
         point_ids: list[str],
         vectors: list[list[float]],
+        sparse_vectors: list[SparseVectorData],
         payloads: list[dict[str, object]],
     ) -> None:
         self.upsert_calls += 1
@@ -137,11 +140,13 @@ class FakeVectorStore:
             self.fail_upsert_once = False
             raise RuntimeError("injected Qdrant write failure")
         self.points.update(dict(zip(point_ids, payloads, strict=True)))
+        self.sparse_vectors.update(dict(zip(point_ids, sparse_vectors, strict=True)))
 
     def delete(self, point_ids: list[str]) -> None:
         self.delete_calls += 1
         for point_id in point_ids:
             self.points.pop(point_id, None)
+            self.sparse_vectors.pop(point_id, None)
 
 
 class FakeEmbedder:
@@ -153,6 +158,9 @@ class FakeEmbedder:
         self.calls += 1
         self.text_count += len(texts)
         return [[0.1] * 1536 for _ in texts]
+
+    def embed_passages(self, texts: list[str]) -> list[SparseVectorData]:
+        return [SparseVectorData(indices=[1, 2], values=[1.0, float(len(text))]) for text in texts]
 
 
 @pytest.fixture
@@ -177,6 +185,7 @@ def test_first_run_persists_all_documents_and_chunks(ingestion_dependencies: tup
     assert len(registry.documents) == 8
     assert len(pdf_store.objects) == 8
     assert len(vector_store.points) == summary.chunks_written
+    assert len(vector_store.sparse_vectors) == summary.chunks_written
     assert embedder.text_count == summary.chunks_written
     assert list(registry.runs.values()) == ["succeeded"]
 
@@ -204,6 +213,54 @@ def test_unchanged_rerun_is_a_true_noop(ingestion_dependencies: tuple) -> None:
     assert summary.docs_changed == 0
     assert summary.chunks_written == 0
     assert (embedder.calls, pdf_store.upload_calls, vector_store.upsert_calls) == prior_calls
+
+
+def test_dense_only_registry_state_migrates_to_dual_vectors_and_then_noops(
+    ingestion_dependencies: tuple,
+) -> None:
+    registry, pdf_store, vector_store, embedder = ingestion_dependencies
+    document = load_manifest(GENERATED_DIR)[0]
+    ingest_documents(
+        [document],
+        registry=registry,
+        pdf_store=pdf_store,
+        vector_store=vector_store,
+        embedder=embedder,
+    )
+    document_id = str(document.metadata["doc_id"])
+    prior_state = registry.documents[document_id]
+    point_ids = set(prior_state.chunk_ids)
+    registry.documents[document_id] = replace(
+        prior_state,
+        fingerprint="legacy-dense-only-fingerprint",
+    )
+    for point_id in point_ids:
+        vector_store.sparse_vectors.pop(point_id)
+    previous_embedding_count = embedder.text_count
+
+    migration = ingest_documents(
+        [document],
+        registry=registry,
+        pdf_store=pdf_store,
+        vector_store=vector_store,
+        embedder=embedder,
+    )
+    calls_after_migration = (embedder.calls, vector_store.upsert_calls)
+    rerun = ingest_documents(
+        [document],
+        registry=registry,
+        pdf_store=pdf_store,
+        vector_store=vector_store,
+        embedder=embedder,
+    )
+
+    assert migration.docs_changed == 1
+    assert set(vector_store.points) == point_ids
+    assert set(vector_store.sparse_vectors) == point_ids
+    assert embedder.text_count > previous_embedding_count
+    assert rerun.docs_changed == 0
+    assert rerun.chunks_written == 0
+    assert (embedder.calls, vector_store.upsert_calls) == calls_after_migration
 
 
 def test_rerun_repairs_missing_qdrant_point(ingestion_dependencies: tuple) -> None:

@@ -6,7 +6,7 @@ insurance claims investigation.
 Current progress:
 
 - Stage 1 platform foundation is complete.
-- Stage 2 document ingestion + RAG is in progress; Phases 2.0-2.3 are complete and Phase 2.4 hybrid retrieval is next.
+- Stage 2 document ingestion + RAG is in progress; Phase 2.4 retrieval modes are deployed with a tracked top_k=20 generation failure, and Phase 2.5 evaluation is next.
 - See [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
 
 ## Stack
@@ -62,6 +62,7 @@ scripts/
 ```bash
 cp .env.example .env
 # set `GROQ_API_KEY` and replace all other `set-me` values
+# For an existing Stage 2 cluster, snapshot and upgrade Qdrant before this deploy.
 ./scripts/deploy-stage1.sh
 ```
 
@@ -97,6 +98,28 @@ At the `psql` prompt, run `\password rag_query`; use that value for `POSTGRES_QU
 read-only identity for both Postgres readiness and policy-version selection; deployment restarts
 the API so updated credentials take effect.
 
+Before Phase 2.4 on an existing cluster, snapshot and download the current Qdrant collection.
+Keep this port-forward open in one terminal:
+
+```bash
+kubectl -n ai-platform port-forward svc/qdrant 6333:6333
+```
+
+Then in another terminal, create and download the snapshot before stepping through the supported
+Qdrant upgrades. Do not apply the `v1.19.1` manifest directly to data still on `v1.15.4`.
+
+```bash
+set -euo pipefail
+snapshot_response="$(curl -fSs -X POST http://127.0.0.1:6333/collections/insurance_docs/snapshots)"
+snapshot="$(jq -er '.result.name | select(type == "string" and length > 0)' <<<"${snapshot_response}")"
+curl -fSs "http://127.0.0.1:6333/collections/insurance_docs/snapshots/${snapshot}" -o "${HOME}/${snapshot}"
+[[ -s "${HOME}/${snapshot}" ]]
+QDRANT_SNAPSHOT_CONFIRMED=1 ./scripts/upgrade-qdrant.sh
+```
+
+The helper upgrades through `1.16.3`, `1.17.1`, `1.18.3`, then `1.19.1`, waiting for each
+rollout. Rebuild the API image and run `deploy-stage1.sh` only after it completes.
+
 4. After provisioning both roles and refreshing secrets, run ingestion before the RAG smoke test:
 
 ```bash
@@ -116,8 +139,8 @@ the API so updated credentials take effect.
 ```
 
 The ingestion script recreates and starts the suspended Job, watches for success or failure, and
-prints its non-secret summary logs. Re-running ingestion is safe. The smoke test calls the dense
-`/v1/rag/query` endpoint with a sample HOME-002 question.
+prints its non-secret summary logs. Re-running ingestion is safe. The smoke test calls `/v1/rag/query`
+in dense, hybrid, and hybrid-rerank modes with a sample HOME-002 question.
 
 7. Inspect traces from collector logs:
 
@@ -128,6 +151,6 @@ kubectl -n ai-platform logs deploy/otel-collector --tail=200
 ## Current status
 
 - Stage 1: done (smoke test passing with Groq `gpt-oss-20b`)
-- Stage 2: in progress - phases 2.0 through 2.3 complete; Phase 2.4 hybrid retrieval and reranking next
+- Stage 2: in progress - Phase 2.4 modes are deployed; known top_k=20 generation issue remains before Phase 2.4 closure; Phase 2.5 evaluation is next
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).

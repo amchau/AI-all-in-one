@@ -12,12 +12,13 @@ from rag.ingestion.manifest import load_manifest
 from rag.ingestion.models import ManifestDocument
 from rag.ingestion.parse import extract_pdf_pages
 from rag.ingestion.payload import build_qdrant_payload
+from rag.ingestion.sparse import SparseVectorData
 from rag.ingestion.store import object_key_for
 
 
 EMBEDDING_DIMENSIONS = 1536
-PIPELINE_REVISION = "rag-ingestion-v1"
-VECTOR_SCHEMA_REVISION = "dense-1536-v1"
+PIPELINE_REVISION = "rag-ingestion-v2"
+VECTOR_SCHEMA_REVISION = "dense-1536-sparse-bm25-v1"
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,7 @@ class VectorStore(Protocol):
         self,
         point_ids: list[str],
         vectors: list[list[float]],
+        sparse_vectors: list[SparseVectorData],
         payloads: list[dict[str, Any]],
     ) -> None: ...
     def delete(self, point_ids: list[str]) -> None: ...
@@ -97,6 +99,12 @@ class Embedder(Protocol):
     def embed_texts(self, texts: list[str]) -> list[list[float]]: ...
 
 
+class SparseEmbedder(Protocol):
+    model_name: str
+
+    def embed_passages(self, texts: list[str]) -> list[SparseVectorData]: ...
+
+
 def _prepare_document(
     document: ManifestDocument,
     *,
@@ -104,6 +112,7 @@ def _prepare_document(
     pdf_store: PdfStore,
     vector_store: VectorStore,
     embedding_model: str,
+    sparse_model: str,
 ) -> _PreparedDocument:
     tracer = trace.get_tracer(__name__)
     document_id = str(document.metadata["doc_id"])
@@ -119,6 +128,7 @@ def _prepare_document(
         pipeline_revision=PIPELINE_REVISION,
         embedding_model=embedding_model,
         vector_schema_revision=VECTOR_SCHEMA_REVISION,
+        sparse_model=sparse_model,
     )
     object_key = object_key_for(document)
     prior_state = registry.get_document(document_id)
@@ -162,7 +172,9 @@ def ingest_documents(
     pdf_store: PdfStore,
     vector_store: VectorStore,
     embedder: Embedder,
+    sparse_embedder: SparseEmbedder | None = None,
     embedding_model: str = "embed-small",
+    sparse_model: str = "Qdrant/bm25",
 ) -> IngestionSummary:
     """Reconcile a manifest across MinIO, Qdrant, and Postgres; retries converge."""
     if not documents:
@@ -170,6 +182,11 @@ def ingest_documents(
     ids = [str(document.metadata["doc_id"]) for document in documents]
     if len(ids) != len(set(ids)):
         raise ValueError("ingestion manifest contains duplicate document IDs")
+    if sparse_embedder is None:
+        candidate = getattr(embedder, "embed_passages", None)
+        if not callable(candidate):
+            raise ValueError("a sparse embedder is required")
+        sparse_embedder = embedder  # type: ignore[assignment]
 
     tracer = trace.get_tracer(__name__)
     with tracer.start_as_current_span("rag.ingest") as root_span:
@@ -186,6 +203,7 @@ def ingest_documents(
                         pdf_store=pdf_store,
                         vector_store=vector_store,
                         embedding_model=embedding_model,
+                        sparse_model=sparse_model,
                     )
                     for document in documents
                 ]
@@ -205,6 +223,14 @@ def ingest_documents(
                         raise ValueError("embedding vector dimension does not match 1536")
                     span.set_attribute("rag.vector_count", len(vectors))
 
+                with tracer.start_as_current_span("rag.sparse_embed") as span:
+                    span.set_attribute("rag.sparse_model", sparse_model)
+                    span.set_attribute("rag.chunk_count", len(texts))
+                    sparse_vectors = sparse_embedder.embed_passages(texts)
+                    if len(sparse_vectors) != len(texts):
+                        raise ValueError("sparse embedding count does not match chunk count")
+                    span.set_attribute("rag.sparse_vector_count", len(sparse_vectors))
+
                 vector_offset = 0
                 docs_changed = 0
                 chunks_written = 0
@@ -222,11 +248,15 @@ def ingest_documents(
                     if needs_vectors:
                         count = len(item.chunks)
                         document_vectors = vectors[vector_offset : vector_offset + count]
+                        document_sparse_vectors = sparse_vectors[
+                            vector_offset : vector_offset + count
+                        ]
                         vector_offset += count
                         with tracer.start_as_current_span("rag.store"):
                             vector_store.upsert(
                                 [chunk.chunk_id for chunk in item.chunks],
                                 document_vectors,
+                                document_sparse_vectors,
                                 item.payloads,
                             )
                         chunks_written += count
