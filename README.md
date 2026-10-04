@@ -6,7 +6,7 @@ insurance claims investigation.
 Current progress:
 
 - Stage 1 platform foundation is complete.
-- Stage 2 document ingestion + RAG is in progress; Phase 2.5 evaluation is complete and Phase 2.6 observability + docs is next. The Phase 2.4 top_k=20 generation follow-up remains open.
+- Stage 2 document ingestion + RAG is in progress; Phases 2.5 evaluation and 2.6 observability + docs are complete. The Phase 2.4 top_k=20 generation follow-up remains open.
 - See [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
 
 ## Stack
@@ -140,7 +140,9 @@ rollout. Rebuild the API image and run `deploy-stage1.sh` only after it complete
 
 The ingestion script recreates and starts the suspended Job, watches for success or failure, and
 prints its non-secret summary logs. Re-running ingestion is safe. The smoke test calls `/v1/rag/query`
-in dense, hybrid, and hybrid-rerank modes with a sample HOME-002 question.
+in dense, hybrid, and hybrid-rerank modes with a sample HOME-002 question. It validates each response
+and prints the mode, answer status, and trace ID without printing retrieved evidence. A hybrid response
+with `insufficient_evidence` is valid at `top_k=5`.
 
 ## Phase 2.5 RAG evaluation
 
@@ -161,15 +163,23 @@ Artifacts record the API origin and a hash of any base path, not the raw path.
 The known `top_k=20` generation issue is not exercised by this baseline; see the Phase 2.4 follow-up
 in the Stage 2 plan.
 
-7. Inspect traces from collector logs:
+7. Correlate each `trace_id` printed by the smoke test with collector output. For example, replace
+`<trace_id>` with one of the printed IDs:
 
 ```bash
-kubectl -n ai-platform logs deploy/otel-collector --tail=200
+kubectl -n ai-platform logs deploy/otel-collector --since=10m | grep -F '<trace_id>'
 ```
+
+Each trace should include `rag.query`, `rag.source_resolution`, `rag.embed`, `rag.search`, and
+`rag.generate`; hybrid modes also include `rag.sparse_embed`, and `hybrid_rerank` includes
+`rag.rerank`. Span attributes capture bounded operational metadata (such as mode, model, counts, and
+scores), not the raw question or evidence text. Collector export is asynchronous, so inspect logs
+after the request completes. If the trace ID is missing or no match appears, check API/collector
+health and retry the inspection before rerunning the model-backed smoke requests.
 
 ## Current status
 
 - Stage 1: done (smoke test passing with Groq `gpt-oss-20b`)
-- Stage 2: in progress - Phase 2.5 evaluation is complete; Phase 2.6 observability + docs is next; known top_k=20 generation follow-up remains before Phase 2.4 closure
+- Stage 2: in progress - Phases 2.5 evaluation and 2.6 observability + docs are complete; known top_k=20 generation follow-up remains before Phase 2.4 closure
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).

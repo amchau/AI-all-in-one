@@ -1,6 +1,6 @@
 # Stage 2 - Insurance Knowledge System (Enterprise RAG)
 
-Status: **IN PROGRESS** - Phase 2.5 evaluation complete; Phase 2.6 observability + docs is next; Phase 2.4 top_k=20 generation follow-up remains open
+Status: **IN PROGRESS** - Phases 2.5 evaluation and 2.6 observability + docs complete; Phase 2.4 top_k=20 generation follow-up remains open
 Pattern: #1 Enterprise RAG / Knowledge Intelligence
 Builds on: Stage 1 platform (kind, LiteLLM -> Groq, Qdrant, Postgres, MinIO, OTEL)
 
@@ -150,7 +150,7 @@ Phase 2.5 evaluation calibrates one. Upstream failures return sanitized service 
 | 2.3 Dense RAG | Temporal source selection, dense search, grounded generation, validated inline citations; `/v1/rag/query` | Live smoke query returns cited answer; unit tests verify no-evidence abstention |
 | 2.4 Hybrid + rerank | Sparse BM25 vectors, native Qdrant RRF fusion, shared metadata filters, TEI reranking, and backward-compatible API modes | Deployed; 44 points verified with dense+sparse vectors and ingestion no-op verified. Close after bounded-generation fix passes top_k=20 tests; see tracked follow-up below |
 | 2.5 Evaluation | `tests/evaluation/golden.yaml` (35 Qs, 105 API attempts), `scripts/run_rag_eval.py`, report in `docs/eval/` | Complete: all 105 requests succeeded; comparative metrics and per-case outcomes recorded; top_k=20 issue remains tracked separately |
-| 2.6 Observability + docs | spans `rag.embed`, `rag.search`, `rag.rerank`, `rag.generate` with attributes; smoke test extended; README + stage doc | Trace shows full RAG path; `smoke-test.sh` covers RAG |
+| 2.6 Observability + docs | Span-contract tests; smoke response/trace validation; README + stage-doc procedure | Complete: all three smoke trace IDs correlated with collector output; common and mode-specific span paths verified; no raw question/evidence attributes; 154 unit tests pass |
 
 Testing: unit tests for chunker, payload builder, source-date selection, prompt assembly, citation
 validation, and abstention behavior (pytest, target 80% on new `rag/retrieval/` code); opt-in
@@ -395,8 +395,18 @@ Execution record (2026-10-04): `docs/eval/stage2-report.md` records all 35 golde
 `dense`, `hybrid`, and `hybrid_rerank` at `top_k=5`; 105/105 requests succeeded. Recall@5 was
 0.966/0.983/1.000, MRR was 0.931/0.948/0.948, and pooled citation precision was 76.1%/79.5%/78.7%
 respectively. Answerability accuracy was 100% for each mode. This does not establish semantic answer
-correctness or faithfulness. Phase 2.5 is complete; Phase 2.6 is next. The Phase 2.4 `top_k=20`
-generation follow-up remains open.
+correctness or faithfulness. Phase 2.5 is complete. The Phase 2.4 `top_k=20` generation follow-up
+remains open.
+
+Phase 2.6 execution record (2026-10-04): rebuilt and rolled out only `ai-api`, then ran the smoke
+test once across `dense`, `hybrid`, and `hybrid_rerank` at `top_k=5`. All three response trace IDs
+were found in the OTEL Collector debug output. Dense and hybrid-rerank returned `answered`; hybrid
+returned the valid `insufficient_evidence` status. The traces contained source resolution, embedding,
+search, and generation spans; hybrid modes also contained sparse embedding, and hybrid-rerank contained
+reranking. Verified bounded model/mode/count/score attributes and no raw question/evidence attributes.
+The service now marks failed dependency spans as `ERROR` without recording raw exception details;
+wrapped dependency errors suppress chained provider details before API exception logging. All 154
+unit tests passed. The Phase 2.4 `top_k=20` generation follow-up remains open.
 
 ## 7. Planned file additions
 

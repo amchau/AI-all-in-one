@@ -1,6 +1,7 @@
 from datetime import date
 import os
 from pathlib import Path
+import re
 import sys
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -86,7 +87,8 @@ def test_rag_query_returns_validated_citations_and_chunks(api_client, monkeypatc
     assert payload["chunks"][0]["dense_score"] == 0.82
     assert payload["chunks"][0]["hybrid_score"] is None
     assert payload["chunks"][0]["rerank_score"] is None
-    assert payload["trace_id"]
+    assert isinstance(payload["trace_id"], str)
+    assert re.fullmatch(r"[0-9a-f]{32}", payload["trace_id"])
 
 
 def test_rag_query_accepts_hybrid_mode(api_client, monkeypatch) -> None:

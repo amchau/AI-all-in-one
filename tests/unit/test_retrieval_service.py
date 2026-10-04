@@ -3,6 +3,10 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 
 from rag.retrieval.answer import AnswerValidationError
 from rag.retrieval.models import GroundedAnswer, SourceDocument
@@ -275,6 +279,8 @@ def test_hybrid_reranker_failure_becomes_dependency_error_without_fallback() -> 
         )
 
     assert "private TEI detail" not in str(error.value)
+    assert error.value.__cause__ is None
+    assert error.value.__suppress_context__ is True
     assert qdrant.query is not None
 
 
@@ -324,3 +330,117 @@ def test_query_dependency_failures_are_sanitized() -> None:
             )
         )
     assert "private connection detail" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("mode", "mode_specific_spans"),
+    [
+        ("dense", set()),
+        ("hybrid", {"rag.sparse_embed"}),
+        ("hybrid_rerank", {"rag.sparse_embed", "rag.rerank"}),
+    ],
+)
+def test_query_emits_expected_trace_spans_and_bounded_attributes(
+    mode: str,
+    mode_specific_spans: set[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    query_tracer = provider.get_tracer("rag.retrieval.service.test")
+    monkeypatch.setattr("rag.retrieval.service.tracer", query_tracer)
+
+    service = RagQueryService(
+        source_repository=FakeRepository([document()]),
+        embedder=FakeEmbedder(),
+        sparse_embedder=FakeSparseEmbedder(),
+        qdrant_client=FakeQdrant(),
+        reranker=FakeReranker(),
+        answer_generator=FakeGenerator(),
+    )
+    request = RagQueryInput(
+        question="Is flood damage covered?",
+        policy_id="HOME-002",
+        loss_date=date(2025, 3, 1),
+        mode=mode,
+        top_k=5,
+    )
+
+    with query_tracer.start_as_current_span("rag.query") as query_span:
+        service.query(request)
+        query_context = query_span.get_span_context()
+
+    spans = {span.name: span for span in exporter.get_finished_spans()}
+    expected_spans = {
+        "rag.query",
+        "rag.source_resolution",
+        "rag.embed",
+        "rag.search",
+        "rag.generate",
+        *mode_specific_spans,
+    }
+    assert spans.keys() == expected_spans
+
+    query_span_id = query_context.span_id
+    for span in spans.values():
+        assert span.context.trace_id == query_context.trace_id
+        if span.name != "rag.query":
+            assert span.parent is not None
+            assert span.parent.span_id == query_span_id
+
+    assert spans["rag.embed"].attributes["rag.embedding_model"] == "embed-small"
+    assert spans["rag.embed"].attributes["rag.embedding_dimensions"] == 1536
+    assert spans["rag.search"].attributes["rag.mode"] == mode
+    assert spans["rag.search"].attributes["rag.top_k"] == 5
+    assert spans["rag.generate"].attributes["rag.model"] == "gpt-oss-20b"
+    assert spans["rag.generate"].attributes["rag.citation_count"] == 1
+    if "rag.sparse_embed" in mode_specific_spans:
+        assert spans["rag.sparse_embed"].attributes["rag.sparse_model"] == "Qdrant/bm25"
+    if "rag.rerank" in mode_specific_spans:
+        assert spans["rag.rerank"].attributes["rag.reranker_model"] == "BAAI/bge-reranker-base"
+
+    for span in spans.values():
+        assert "Is flood damage covered?" not in repr(span.attributes)
+        assert "Flood damage is covered subject to limits." not in repr(span.attributes)
+        assert not any(
+            sensitive_key in key.lower()
+            for key in span.attributes
+            for sensitive_key in ("question", "evidence", "text")
+        )
+
+
+def test_reranker_failure_span_records_error_without_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    query_tracer = provider.get_tracer("rag.retrieval.service.test")
+    monkeypatch.setattr("rag.retrieval.service.tracer", query_tracer)
+    service = RagQueryService(
+        source_repository=FakeRepository([document()]),
+        embedder=FakeEmbedder(),
+        sparse_embedder=FakeSparseEmbedder(),
+        qdrant_client=FakeQdrant(),
+        reranker=FakeReranker(fail=True),
+        answer_generator=FakeGenerator(),
+    )
+
+    with query_tracer.start_as_current_span("rag.query"):
+        with pytest.raises(QueryDependencyError, match="reranking failed"):
+            service.query(
+                RagQueryInput(
+                    question="Is flood damage covered?",
+                    policy_id="HOME-002",
+                    loss_date=date(2025, 3, 1),
+                    mode="hybrid_rerank",
+                )
+            )
+
+    rerank_span = next(
+        span for span in exporter.get_finished_spans() if span.name == "rag.rerank"
+    )
+    assert rerank_span.status.status_code == StatusCode.ERROR
+    assert "private TEI detail" not in (rerank_span.status.description or "")
+    assert all("private TEI detail" not in repr(event.attributes) for event in rerank_span.events)

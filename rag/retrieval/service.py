@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date
 from dataclasses import replace
 from math import isfinite
@@ -7,6 +9,7 @@ import time
 from typing import Any, Protocol
 
 from opentelemetry import trace
+from opentelemetry.trace import Span, Status, StatusCode
 
 from rag.ingestion.embed import EmbeddingError
 from rag.retrieval.answer import AnswerValidationError
@@ -23,6 +26,20 @@ from rag.retrieval.sources import select_eligible_sources
 
 
 tracer = trace.get_tracer(__name__)
+
+
+@contextmanager
+def _start_rag_span(name: str) -> Iterator[Span]:
+    with tracer.start_as_current_span(
+        name,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        try:
+            yield span
+        except Exception:
+            span.set_status(Status(StatusCode.ERROR))
+            raise
 
 
 def _record_score_range(span: Any, chunks: list[RetrievedChunk]) -> None:
@@ -79,7 +96,7 @@ class RagQueryService:
         started_at = time.perf_counter()
         guidance_as_of = request.guidance_as_of or request.loss_date
         try:
-            with tracer.start_as_current_span("rag.source_resolution") as span:
+            with _start_rag_span("rag.source_resolution") as span:
                 source_documents = self._source_repository.list_for_policy(request.policy_id)
                 eligible_documents = select_eligible_sources(
                     source_documents,
@@ -90,11 +107,11 @@ class RagQueryService:
                 span.set_attribute("rag.source_count", len(eligible_documents))
         except ValueError:
             raise
-        except Exception as error:
-            raise QueryDependencyError("source registry query failed") from error
+        except Exception:
+            raise QueryDependencyError("source registry query failed") from None
 
         try:
-            with tracer.start_as_current_span("rag.embed") as span:
+            with _start_rag_span("rag.embed") as span:
                 vectors = self._embedder.embed_texts([request.question])
                 if len(vectors) != 1 or len(vectors[0]) != 1536 or any(
                     not isfinite(value) for value in vectors[0]
@@ -103,13 +120,13 @@ class RagQueryService:
                 query_vector = vectors[0]
                 span.set_attribute("rag.embedding_model", "embed-small")
                 span.set_attribute("rag.embedding_dimensions", len(query_vector))
-        except Exception as error:
-            raise QueryDependencyError("query embedding failed") from error
+        except Exception:
+            raise QueryDependencyError("query embedding failed") from None
 
         candidate_count = request.top_k
         if request.mode == "dense":
             try:
-                with tracer.start_as_current_span("rag.search") as span:
+                with _start_rag_span("rag.search") as span:
                     chunks = search_dense(
                         self._qdrant_client,
                         query_vector,
@@ -120,21 +137,21 @@ class RagQueryService:
                     span.set_attribute("rag.top_k", request.top_k)
                     span.set_attribute("rag.result_count", len(chunks))
                     _record_score_range(span, chunks)
-            except Exception as error:
-                raise QueryDependencyError("dense search failed") from error
+            except Exception:
+                raise QueryDependencyError("dense search failed") from None
         else:
             if self._sparse_embedder is None:
                 raise QueryDependencyError("sparse query encoder is unavailable")
             try:
-                with tracer.start_as_current_span("rag.sparse_embed") as span:
+                with _start_rag_span("rag.sparse_embed") as span:
                     sparse_query = self._sparse_embedder.embed_query(request.question)
                     span.set_attribute("rag.sparse_model", self._sparse_embedder.model_name)
                     span.set_attribute("rag.sparse_vector_size", len(sparse_query.indices))
-            except Exception as error:
-                raise QueryDependencyError("sparse query encoding failed") from error
+            except Exception:
+                raise QueryDependencyError("sparse query encoding failed") from None
             candidate_count = candidate_pool_size(request.top_k)
             try:
-                with tracer.start_as_current_span("rag.search") as span:
+                with _start_rag_span("rag.search") as span:
                     chunks = search_hybrid(
                         self._qdrant_client,
                         query_vector,
@@ -147,20 +164,20 @@ class RagQueryService:
                     span.set_attribute("rag.candidate_count", candidate_count)
                     span.set_attribute("rag.result_count", len(chunks))
                     _record_score_range(span, chunks)
-            except Exception as error:
-                raise QueryDependencyError("hybrid search failed") from error
+            except Exception:
+                raise QueryDependencyError("hybrid search failed") from None
             if request.mode == "hybrid_rerank":
                 if self._reranker is None:
                     raise QueryDependencyError("reranker is unavailable")
                 try:
-                    with tracer.start_as_current_span("rag.rerank") as span:
+                    with _start_rag_span("rag.rerank") as span:
                         chunks = self._reranker.rerank(request.question, chunks)
                         span.set_attribute("rag.reranker_model", self._reranker.model_name)
                         span.set_attribute("rag.candidate_count", candidate_count)
                         span.set_attribute("rag.result_count", len(chunks))
                         _record_score_range(span, chunks)
-                except Exception as error:
-                    raise QueryDependencyError("reranking failed") from error
+                except Exception:
+                    raise QueryDependencyError("reranking failed") from None
             chunks = chunks[: request.top_k]
         if request.mode != "dense":
             chunks = [
@@ -175,7 +192,7 @@ class RagQueryService:
         )
         if chunks:
             try:
-                with tracer.start_as_current_span("rag.generate") as span:
+                with _start_rag_span("rag.generate") as span:
                     answer = self._answer_generator.generate(request.question, chunks)
                     span.set_attribute("rag.model", self._answer_generator.model)
                     span.set_attribute("rag.citation_count", len(answer.citations))
@@ -189,8 +206,8 @@ class RagQueryService:
                     answer="",
                     citations=[],
                 )
-            except Exception as error:
-                raise QueryDependencyError("grounded generation failed") from error
+            except Exception:
+                raise QueryDependencyError("grounded generation failed") from None
 
         return RagQueryResult(
             answer=answer,
