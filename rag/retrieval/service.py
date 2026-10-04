@@ -15,6 +15,7 @@ from rag.ingestion.embed import EmbeddingError
 from rag.retrieval.answer import AnswerValidationError
 from rag.retrieval.models import (
     GroundedAnswer,
+    GroundedInvestigation,
     RagQueryInput,
     RagQueryResult,
     RetrievedChunk,
@@ -69,6 +70,12 @@ class AnswerGenerator(Protocol):
 
     def generate(self, question: str, chunks: list[RetrievedChunk]) -> GroundedAnswer: ...
 
+    def generate_investigation(
+        self,
+        question: str,
+        chunks: list[RetrievedChunk],
+    ) -> GroundedInvestigation: ...
+
 
 class QueryDependencyError(RuntimeError):
     """Raised when a query dependency fails or returns invalid data."""
@@ -92,7 +99,12 @@ class RagQueryService:
         self._reranker = reranker
         self._answer_generator = answer_generator
 
-    def query(self, request: RagQueryInput) -> RagQueryResult:
+    def query(
+        self,
+        request: RagQueryInput,
+        *,
+        structured_investigation: bool = False,
+    ) -> RagQueryResult:
         started_at = time.perf_counter()
         guidance_as_of = request.guidance_as_of or request.loss_date
         try:
@@ -190,10 +202,45 @@ class RagQueryService:
             answer="",
             citations=[],
         )
+        investigation: GroundedInvestigation | None = (
+            GroundedInvestigation(
+                status="insufficient_evidence",
+                summary="",
+                summary_refs=(),
+                findings=(),
+                unresolved_questions=(),
+                citations=[],
+            )
+            if structured_investigation
+            else None
+        )
         if chunks:
             try:
                 with _start_rag_span("rag.generate") as span:
-                    answer = self._answer_generator.generate(request.question, chunks)
+                    if structured_investigation:
+                        investigation = self._answer_generator.generate_investigation(
+                            request.question,
+                            chunks,
+                        )
+                        rendered_claims = [
+                            f"{investigation.summary} "
+                            + ", ".join(f"[{ref}]" for ref in investigation.summary_refs)
+                        ]
+                        rendered_claims.extend(
+                            f"{finding.text} "
+                            + ", ".join(f"[{ref}]" for ref in finding.refs)
+                            for finding in investigation.findings
+                        )
+                        answer = GroundedAnswer(
+                            status=investigation.status,
+                            answer="\n".join(rendered_claims),
+                            citations=investigation.citations,
+                            prompt_tokens=investigation.prompt_tokens,
+                            completion_tokens=investigation.completion_tokens,
+                            total_tokens=investigation.total_tokens,
+                        )
+                    else:
+                        answer = self._answer_generator.generate(request.question, chunks)
                     span.set_attribute("rag.model", self._answer_generator.model)
                     span.set_attribute("rag.citation_count", len(answer.citations))
                     for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
@@ -206,6 +253,15 @@ class RagQueryService:
                     answer="",
                     citations=[],
                 )
+                if structured_investigation:
+                    investigation = GroundedInvestigation(
+                        status="insufficient_evidence",
+                        summary="",
+                        summary_refs=(),
+                        findings=(),
+                        unresolved_questions=(),
+                        citations=[],
+                    )
             except Exception:
                 raise QueryDependencyError("grounded generation failed") from None
 
@@ -215,4 +271,5 @@ class RagQueryService:
             model=self._answer_generator.model,
             latency_ms=int((time.perf_counter() - started_at) * 1000),
             mode=request.mode,
+            investigation=investigation,
         )

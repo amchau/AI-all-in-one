@@ -10,7 +10,7 @@ a measured problem, recorded in an ADR.
 |-------|------|---------|--------|-----|
 | 1 | Platform foundation on Kubernetes | AI Factory | Done | [01](01-stage1-foundation.md) |
 | 2 | Document ingestion + RAG | Knowledge Intelligence | In progress (2.5 evaluation and 2.6 observability + docs complete; 2.4 top_k=20 follow-up remains open) | [02](02-stage2-rag-plan.md) |
-| 3 | Claims Copilot (UI, structured investigation output) | Human-in-the-loop | - | - |
+| 3 | Claims Copilot (UI, structured investigation output) | Human-in-the-loop | In progress (API/UI deployed; live generation blocked by Groq `json_validate_failed`; Stage 2 remains open) | [03](03-stage3-claims-copilot-plan.md) |
 | 4 | Tool-calling agent (fake Claims/Policy/Customer/Payments/Fraud APIs) | Agentic workflow, MCP-style tools | - | - |
 | 5 | Claims risk model (XGBoost/LightGBM) | Decision Intelligence | - | - |
 | 6 | Agent + ML + RAG orchestration | Hybrid AI | - | - |
@@ -47,6 +47,7 @@ docs/          stage docs, adr/, eval/, security.md, threat-model.md
 | 008 | Observability stack expansion | 9 | - |
 | 009 | Dense RAG query contract | 2 | Accepted |
 | 010 | Hybrid retrieval and reranking contract | 2 | Accepted |
+| 011 | Stage 3 frontend framework and delivery | 3 | Accepted |
 
 ## Evaluation dimensions tracked from Stage 2 onward
 

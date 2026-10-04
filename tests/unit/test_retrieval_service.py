@@ -9,7 +9,12 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import StatusCode
 
 from rag.retrieval.answer import AnswerValidationError
-from rag.retrieval.models import GroundedAnswer, SourceDocument
+from rag.retrieval.models import (
+    GroundedAnswer,
+    GroundedFinding,
+    GroundedInvestigation,
+    SourceDocument,
+)
 from rag.ingestion.sparse import SparseVectorData
 from rag.retrieval.service import (
     QueryDependencyError,
@@ -81,6 +86,35 @@ class FakeGenerator:
             status="answered",
             answer=f"Covered. [{chunk.ref}]",
             citations=[chunk.citation()],
+        )
+
+
+class FakeInvestigationGenerator(FakeGenerator):
+    def __init__(self) -> None:
+        super().__init__()
+        self.investigation_calls: list[tuple[str, list[object]]] = []
+
+    def generate_investigation(
+        self,
+        question: str,
+        chunks: list[object],
+    ) -> GroundedInvestigation:
+        self.investigation_calls.append((question, chunks))
+        chunk = chunks[0]
+        return GroundedInvestigation(
+            status="answered",
+            summary="Flood cover is subject to limits.",
+            summary_refs=(chunk.ref,),
+            findings=(
+                GroundedFinding(
+                    text="The policy limits flood cover.",
+                    refs=(chunk.ref,),
+                ),
+            ),
+            unresolved_questions=("What is the estimated repair cost?",),
+            citations=[chunk.citation()],
+            prompt_tokens=50,
+            completion_tokens=20,
         )
 
 
@@ -282,6 +316,66 @@ def test_hybrid_reranker_failure_becomes_dependency_error_without_fallback() -> 
     assert error.value.__cause__ is None
     assert error.value.__suppress_context__ is True
     assert qdrant.query is not None
+
+
+def test_structured_investigation_uses_single_grounded_generation_call() -> None:
+    generator = FakeInvestigationGenerator()
+    service = RagQueryService(
+        source_repository=FakeRepository([document()]),
+        embedder=FakeEmbedder(),
+        sparse_embedder=FakeSparseEmbedder(),
+        qdrant_client=FakeQdrant(),
+        reranker=FakeReranker(),
+        answer_generator=generator,
+    )
+
+    result = service.query(
+        RagQueryInput(
+            question="Prepare an evidence brief for the claim.",
+            policy_id="HOME-002",
+            loss_date=date(2025, 3, 1),
+            mode="hybrid_rerank",
+            top_k=5,
+        ),
+        structured_investigation=True,
+    )
+
+    assert result.investigation is not None
+    assert result.investigation.summary == "Flood cover is subject to limits."
+    assert result.investigation.findings[0].refs == ("C1",)
+    assert result.investigation.prompt_tokens == 50
+    assert result.answer.citations[0].chunk_id == "chunk-1"
+    assert len(generator.investigation_calls) == 1
+    assert generator.calls == []
+
+
+def test_structured_investigation_abstains_when_retrieval_has_no_chunks() -> None:
+    generator = FakeInvestigationGenerator()
+    qdrant = SimpleNamespace(query_points=lambda **kwargs: SimpleNamespace(points=[]))
+    service = RagQueryService(
+        source_repository=FakeRepository([document()]),
+        embedder=FakeEmbedder(),
+        sparse_embedder=FakeSparseEmbedder(),
+        qdrant_client=qdrant,
+        reranker=FakeReranker(),
+        answer_generator=generator,
+    )
+
+    result = service.query(
+        RagQueryInput(
+            question="Prepare an evidence brief for the claim.",
+            policy_id="HOME-002",
+            loss_date=date(2025, 3, 1),
+            mode="hybrid_rerank",
+            top_k=5,
+        ),
+        structured_investigation=True,
+    )
+
+    assert result.investigation is not None
+    assert result.investigation.status == "insufficient_evidence"
+    assert result.investigation.findings == ()
+    assert generator.investigation_calls == []
 
 
 def test_invalid_generated_citations_become_insufficient_evidence() -> None:

@@ -82,9 +82,29 @@ class GroundedAnswer:
 
 
 @dataclass(frozen=True)
+class GroundedFinding:
+    text: str
+    refs: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GroundedInvestigation:
+    status: str
+    summary: str
+    summary_refs: tuple[str, ...]
+    findings: tuple[GroundedFinding, ...]
+    unresolved_questions: tuple[str, ...]
+    citations: list[Citation]
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+
+@dataclass(frozen=True)
 class RagQueryResult:
     answer: GroundedAnswer
     chunks: list[RetrievedChunk]
     model: str
     latency_ms: int
     mode: Literal["dense", "hybrid", "hybrid_rerank"] = "dense"
+    investigation: GroundedInvestigation | None = None

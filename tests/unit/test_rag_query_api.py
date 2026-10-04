@@ -19,6 +19,8 @@ with patch.dict(os.environ, {"AI_API_ENV_FILE": ""}), patch(
 from rag.retrieval.models import (
     Citation,
     GroundedAnswer,
+    GroundedFinding,
+    GroundedInvestigation,
     RagQueryResult,
     RetrievedChunk,
 )
@@ -337,6 +339,221 @@ def test_investigate_route_keeps_working_without_minio_credentials(
     assert response.status_code == 200
     assert response.json()["answer"] == "Investigation summary"
     assert set(response.json()["dependencies"]) == {"postgres", "qdrant", "litellm"}
+
+
+def test_structured_investigation_returns_cited_brief_and_trace_id(
+    api_client,
+    monkeypatch,
+) -> None:
+    citation = Citation(
+        ref="C1",
+        chunk_id="chunk-1",
+        doc_id="POL-HOME-002-v2",
+        title="Home Policy",
+        section="4",
+        clause="4.2",
+        page=3,
+    )
+    chunk = RetrievedChunk(
+        chunk_id="chunk-1",
+        ref="C1",
+        doc_id="POL-HOME-002-v2",
+        title="Home Policy",
+        section="4",
+        clause="4.2",
+        page=3,
+        score=0.82,
+        text="Flood damage is covered subject to the stated limits.",
+    )
+    investigation = GroundedInvestigation(
+        status="answered",
+        summary="Flood cover is subject to limits.",
+        summary_refs=("C1",),
+        findings=(
+            GroundedFinding(
+                text="The policy limits flood cover.",
+                refs=("C1",),
+            ),
+        ),
+        unresolved_questions=("What is the estimated repair cost?",),
+        citations=[citation],
+    )
+    result = SimpleNamespace(
+        investigation=investigation,
+        chunks=[chunk],
+        model="gpt-oss-20b",
+        latency_ms=120,
+        mode="hybrid_rerank",
+    )
+    monkeypatch.setattr(
+        main,
+        "execute_rag_investigation",
+        lambda request: result,
+        raising=False,
+    )
+
+    response = api_client.post(
+        "/v1/investigations",
+        json={
+            "claim_id": "CL-123",
+            "policy_id": "HOME-002",
+            "loss_date": "2025-03-01",
+            "narrative": "Flood water entered the ground floor overnight.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["claim_id"] == "CL-123"
+    assert payload["status"] == "answered"
+    assert payload["summary"] == "Flood cover is subject to limits."
+    assert payload["summary_citations"][0]["ref"] == "C1"
+    assert payload["findings"][0]["citations"][0]["chunk_id"] == "chunk-1"
+    assert payload["evidence"][0]["text"] == chunk.text
+    assert payload["unresolved_questions"] == ["What is the estimated repair cost?"]
+    assert re.fullmatch(r"[0-9a-f]{32}", payload["trace_id"])
+
+
+@pytest.mark.parametrize(
+    "extra_fields",
+    [
+        {"mode": "dense"},
+        {"top_k": 20},
+    ],
+)
+def test_structured_investigation_does_not_accept_retrieval_overrides(
+    api_client,
+    extra_fields: dict[str, object],
+) -> None:
+    payload = {
+        "claim_id": "CL-123",
+        "policy_id": "HOME-002",
+        "loss_date": "2025-03-01",
+        "narrative": "Flood water entered the ground floor overnight.",
+        **extra_fields,
+    }
+
+    response = api_client.post("/v1/investigations", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_investigation_validation_errors_do_not_echo_claim_narrative(api_client) -> None:
+    private_marker = "CLAIM-NARRATIVE-DO-NOT-ECHO"
+    response = api_client.post(
+        "/v1/investigations",
+        json={
+            "claim_id": "CL-123",
+            "policy_id": "HOME-002",
+            "loss_date": "2025-03-01",
+            "narrative": private_marker + ("x" * 1000),
+        },
+    )
+
+    assert response.status_code == 422
+    assert private_marker not in response.text
+    errors = response.json()["detail"]
+    assert any(error["loc"] == ["body", "narrative"] for error in errors)
+    assert all("input" not in error and "ctx" not in error for error in errors)
+
+
+def test_investigation_validation_errors_redact_unknown_field_names(api_client) -> None:
+    private_field = "CLAIM-SECRET-FIELD-NAME"
+    response = api_client.post(
+        "/v1/investigations",
+        json={
+            "claim_id": "CL-123",
+            "policy_id": "HOME-002",
+            "loss_date": "2025-03-01",
+            "narrative": "Flood water entered the ground floor overnight.",
+            private_field: "private-value",
+        },
+    )
+
+    assert response.status_code == 422
+    assert private_field not in response.text
+    assert "private-value" not in response.text
+    errors = response.json()["detail"]
+    assert any("field" in error["loc"] for error in errors)
+
+
+def test_fastapi_server_span_redacts_query_string() -> None:
+    class RecordingSpan:
+        def __init__(self) -> None:
+            self.attributes: dict[str, object] = {}
+
+        def is_recording(self) -> bool:
+            return True
+
+        def set_attribute(self, name: str, value: object) -> None:
+            self.attributes[name] = value
+
+    span = RecordingSpan()
+    main.sanitize_server_request_span(
+        span,
+        {
+            "path": "/v1/investigations",
+            "query_string": b"claim=CLAIM-NARRATIVE-SECRET",
+            "scheme": "http",
+            "headers": [(b"host", b"api.local:8000")],
+        },
+    )
+
+    assert span.attributes["http.target"] == "/v1/investigations"
+    assert span.attributes["http.url"] == "http://api.local:8000/v1/investigations"
+    assert span.attributes["url.query"] == ""
+    assert "CLAIM-NARRATIVE-SECRET" not in repr(span.attributes)
+
+
+def test_investigation_dependency_errors_remain_distinct_from_abstention(
+    api_client,
+    monkeypatch,
+) -> None:
+    def fail(request):
+        raise main.QueryDependencyError("private provider detail")
+
+    monkeypatch.setattr(main, "execute_rag_investigation", fail)
+    response = api_client.post(
+        "/v1/investigations",
+        json={
+            "claim_id": "CL-123",
+            "policy_id": "HOME-002",
+            "loss_date": "2025-03-01",
+            "narrative": "Flood water entered the ground floor overnight.",
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Claims investigation dependency failed"
+    assert "private provider detail" not in response.text
+
+
+def test_execute_rag_investigation_fixes_mode_and_top_k(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def execute(request, *, structured_investigation: bool = False):
+        captured["request"] = request
+        captured["structured_investigation"] = structured_investigation
+        return SimpleNamespace()
+
+    monkeypatch.setattr(main, "execute_rag_query", execute)
+    request = main.ClaimsInvestigationRequest(
+        claim_id="CL-123",
+        policy_id="HOME-002",
+        loss_date=date(2025, 3, 1),
+        narrative="Flood water entered the ground floor overnight.",
+    )
+
+    main.execute_rag_investigation(request)
+
+    rag_request = captured["request"]
+    assert rag_request.policy_id == "HOME-002"
+    assert rag_request.loss_date == date(2025, 3, 1)
+    assert rag_request.guidance_as_of is None
+    assert rag_request.mode == "hybrid_rerank"
+    assert rag_request.top_k == 5
+    assert "Flood water entered the ground floor overnight." in rag_request.question
+    assert captured["structured_investigation"] is True
 
 
 def test_litellm_health_checks_readiness_endpoint(monkeypatch) -> None:

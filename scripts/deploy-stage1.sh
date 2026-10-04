@@ -146,6 +146,7 @@ printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_QUERY_PASSWORD}" > "${QUERY_SECRET_F
 
 "${KUBECTL[@]}" -n ai-platform rollout restart deploy/litellm
 "${KUBECTL[@]}" -n ai-platform rollout restart deploy/ai-api
+"${KUBECTL[@]}" -n ai-platform rollout restart deploy/claims-frontend
 
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/postgres --timeout=180s
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/qdrant --timeout=180s
@@ -167,5 +168,6 @@ else
   exit 1
 fi
 "${KUBECTL[@]}" -n ai-platform rollout status deploy/reranker --timeout=900s
+"${KUBECTL[@]}" -n ai-platform rollout status deploy/claims-frontend --timeout=180s
 
 "${KUBECTL[@]}" -n ai-platform get pods

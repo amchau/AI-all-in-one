@@ -103,6 +103,123 @@ def test_generator_sanitizes_upstream_errors() -> None:
     client.close()
 
 
+def test_generator_returns_structured_grounded_investigation() -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "abstain": False,
+                                    "summary": {
+                                        "text": "Flood cover is subject to limits.",
+                                        "refs": ["C1"],
+                                    },
+                                    "findings": [
+                                        {
+                                            "text": "The policy limits flood cover.",
+                                            "refs": ["C1"],
+                                        }
+                                    ],
+                                    "unresolved_questions": [
+                                        "What is the estimated repair cost?"
+                                    ],
+                                }
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 50, "completion_tokens": 20},
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handle))
+    generator = LiteLLMAnswerGenerator(
+        client=client,
+        base_url="http://litellm:4000",
+        master_key="test-secret",
+        model="gpt-oss-20b",
+    )
+
+    answer = generator.generate_investigation(
+        "Investigate this claim narrative.", [retrieved_chunk()]
+    )
+
+    assert answer.summary == "Flood cover is subject to limits."
+    assert answer.findings[0].refs == ("C1",)
+    assert answer.unresolved_questions == ("What is the estimated repair cost?",)
+    assert answer.prompt_tokens == 50
+    assert answer.completion_tokens == 20
+    payload = json.loads(requests[0].content)
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["max_completion_tokens"] == 1200
+    assert '"findings":[{"text":"...","refs":["C1"]}]' in payload["messages"][0]["content"]
+    client.close()
+
+
+def test_investigation_generator_reports_provider_refusal_as_generation_error() -> None:
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"refusal": "I cannot answer that request."}}
+                    ]
+                },
+            )
+        )
+    )
+    generator = LiteLLMAnswerGenerator(
+        client=client,
+        base_url="http://litellm:4000",
+        master_key="test-secret",
+        model="gpt-oss-20b",
+    )
+
+    with pytest.raises(GenerationError, match="refused structured investigation"):
+        generator.generate_investigation(
+            "Investigate the reported loss.", [retrieved_chunk()]
+        )
+    client.close()
+
+
+def test_investigation_generator_reports_content_filter_as_generation_error() -> None:
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "finish_reason": "content_filter",
+                            "message": {"content": None},
+                        }
+                    ]
+                },
+            )
+        )
+    )
+    generator = LiteLLMAnswerGenerator(
+        client=client,
+        base_url="http://litellm:4000",
+        master_key="test-secret",
+        model="gpt-oss-20b",
+    )
+
+    with pytest.raises(GenerationError, match="content filter"):
+        generator.generate_investigation(
+            "Investigate the reported loss.", [retrieved_chunk()]
+        )
+    client.close()
+
+
 def test_generator_rejects_non_object_message_as_invalid_evidence() -> None:
     client = httpx.Client(
         transport=httpx.MockTransport(

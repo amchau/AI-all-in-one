@@ -15,6 +15,12 @@ venv/
 .mypy_cache/
 coverage.xml
 htmlcov/
+apps/frontend/node_modules/
+apps/frontend/dist/
+apps/frontend/coverage/
+apps/frontend/playwright-report/
+apps/frontend/test-results/
+apps/frontend/*.tsbuildinfo
 
 # OS / editors
 .DS_Store

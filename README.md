@@ -7,13 +7,15 @@ Current progress:
 
 - Stage 1 platform foundation is complete.
 - Stage 2 document ingestion + RAG is in progress; Phases 2.5 evaluation and 2.6 observability + docs are complete. The Phase 2.4 top_k=20 generation follow-up remains open.
-- See [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
+- Stage 3 Claims Copilot is in progress. API/UI are deployed locally and automated checks pass; live structured generation is blocked by Groq `json_validate_failed`.
+- See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md), and [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md).
 
 ## Stack
 
 - Kubernetes: kind
 - Container runtime: Podman
 - API service: FastAPI (`apps/ai-api`)
+- Frontend: React + Vite (`apps/frontend`)
 - LLM gateway: LiteLLM
 - Data services: PostgreSQL, Qdrant, MinIO
 - Observability: OpenTelemetry Collector (`debug` exporter)
@@ -35,6 +37,7 @@ Note: scripts auto-select Podman for kind when available.
 ```text
 apps/
   ai-api/
+  frontend/
 docs/
   adr/
 infrastructure/
@@ -55,6 +58,7 @@ scripts/
 
 ```bash
 ./scripts/build-ai-api.sh
+./scripts/build-claims-frontend.sh
 ```
 
 3. Create secrets and deploy the platform:
@@ -67,7 +71,7 @@ cp .env.example .env
 ```
 
 `deploy-stage1.sh` safely parses `.env` and creates/updates Kubernetes secret `stage1-secrets`.
-The build script creates the shared `localhost/ai-api:stage2` image. The ingestion Job is
+The build script creates the shared `localhost/ai-api:stage3.9` image. The ingestion Job is
 registered but suspended during normal deployment. On a fresh database, the script defers only
 the API readiness wait while `rag_query` is absent; the API becomes ready after the query role and
 schema grants are provisioned.
@@ -177,9 +181,50 @@ scores), not the raw question or evidence text. Collector export is asynchronous
 after the request completes. If the trace ID is missing or no match appears, check API/collector
 health and retry the inspection before rerunning the model-backed smoke requests.
 
+## Stage 3 Claims Copilot
+
+The local handler UI uses the existing corpus and fixed `hybrid_rerank`, `top_k=5` retrieval. It
+accepts synthetic claim details and shows citation-backed findings for handler review; it does not
+make coverage decisions or persist claims. The narrative is sent through LiteLLM to configured
+hosted embedding (currently OpenRouter) and generation (currently Groq) providers, so use synthetic
+text only and never enter real PII;
+provider retention is outside this repository's control.
+Stage 2 remains in progress, including its open Phase 2.4 `top_k=20` follow-up. The legacy
+cluster-internal `/v1/investigate` endpoint remains for existing callers; the UI uses the grounded
+`/v1/investigations` endpoint.
+
+Run the frontend locally against the API port-forward:
+
+```bash
+./scripts/port-forward.sh
+npm --prefix apps/frontend ci
+npm --prefix apps/frontend run dev
+```
+
+For the kind deployment, rebuild/load the frontend image, apply only its manifest, and forward its
+service:
+
+```bash
+./scripts/build-claims-frontend.sh
+kubectl --context kind-ai-stage1 apply -f infrastructure/kubernetes/base/claims-frontend.yaml
+kubectl --context kind-ai-stage1 -n ai-platform rollout restart deploy/claims-frontend
+kubectl --context kind-ai-stage1 -n ai-platform rollout status deploy/claims-frontend
+./scripts/port-forward-claims-frontend.sh
+```
+
+Open `http://127.0.0.1:4173`. Frontend tests are `npm --prefix apps/frontend run test:coverage`
+and `npm --prefix apps/frontend run test:e2e`. The one-shot live check is
+`./scripts/claims-copilot-smoke.sh`; it sends one provider-backed request and never retries.
+
+The frontend, API, and mocked browser flows pass. A live Stage 3 request returned HTTP 502 because
+Groq rejected structured JSON with `json_validate_failed`; the failure trace reached `rag.generate`
+and is visible in the collector. No follow-up model request was made. Keep this provider limitation
+tracked with the open Stage 2 generation follow-up; do not mark Stage 2 complete.
+
 ## Current status
 
 - Stage 1: done (smoke test passing with Groq `gpt-oss-20b`)
 - Stage 2: in progress - Phases 2.5 evaluation and 2.6 observability + docs are complete; known top_k=20 generation follow-up remains before Phase 2.4 closure
+- Stage 3: in progress - API/UI deployed; unit and mocked desktop/mobile browser tests pass; live structured generation is blocked by Groq JSON validation
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).

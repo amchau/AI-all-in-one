@@ -5,12 +5,15 @@ import time
 from pathlib import Path
 from threading import Lock
 from contextlib import asynccontextmanager
+from datetime import date
 import logging
 from typing import Any, Literal
 
 import httpx
 import psycopg
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -18,7 +21,7 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from qdrant_client import QdrantClient
 
@@ -101,6 +104,47 @@ class InvestigateResponse(BaseModel):
     dependencies: dict[str, Any]
 
 
+class ClaimsInvestigationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    claim_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    policy_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    loss_date: date
+    guidance_as_of: date | None = None
+    narrative: str = Field(min_length=5, max_length=1000)
+
+
+class InvestigationFindingResponse(BaseModel):
+    text: str
+    citations: list[Citation]
+
+
+class InvestigationEvidenceResponse(BaseModel):
+    chunk_id: str
+    ref: str
+    title: str
+    section: str | None
+    clause: str | None
+    page: int
+    text: str
+
+
+class ClaimsInvestigationResponse(BaseModel):
+    claim_id: str
+    policy_id: str
+    loss_date: date
+    guidance_as_of: date
+    status: Literal["answered", "insufficient_evidence"]
+    summary: str
+    summary_citations: list[Citation]
+    findings: list[InvestigationFindingResponse]
+    unresolved_questions: list[str]
+    evidence: list[InvestigationEvidenceResponse]
+    model: str
+    latency_ms: int
+    trace_id: str | None
+
+
 class RagChunkResponse(BaseModel):
     chunk_id: str
     ref: str
@@ -139,8 +183,83 @@ async def lifespan(_: FastAPI):
     yield
 
 
+def sanitize_server_request_span(span: Any, scope: dict[str, Any]) -> None:
+    if not span.is_recording():
+        return
+    path = str(scope.get("path") or "/")
+    scheme = str(scope.get("scheme") or "http")
+    raw_headers = scope.get("headers", [])
+    headers = {
+        name.decode("latin-1").lower() if isinstance(name, bytes) else str(name).lower():
+        value.decode("latin-1") if isinstance(value, bytes) else str(value)
+        for name, value in raw_headers
+    }
+    host = headers.get("host")
+    if not host:
+        server = scope.get("server")
+        if isinstance(server, tuple) and server:
+            host = str(server[0])
+            if len(server) > 1 and server[1] is not None:
+                host = f"{host}:{server[1]}"
+    safe_url = f"{scheme}://{host}{path}" if host else path
+    for name, value in {
+        "http.target": path,
+        "http.url": safe_url,
+        "http.request.target": path,
+        "url.full": safe_url,
+        "url.path": path,
+        "url.query": "",
+    }.items():
+        span.set_attribute(name, value)
+
+
 app = FastAPI(title="AI API", version="0.1.0", lifespan=lifespan)
-FastAPIInstrumentor.instrument_app(app)
+FastAPIInstrumentor.instrument_app(
+    app,
+    server_request_hook=sanitize_server_request_span,
+)
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(
+    _request: Request,
+    error: RequestValidationError,
+) -> JSONResponse:
+    safe_errors: list[dict[str, Any]] = []
+    location_roots = {"body", "query", "path", "header", "cookie"}
+    known_fields = {
+        "claim_id",
+        "policy_id",
+        "loss_date",
+        "guidance_as_of",
+        "narrative",
+        "question",
+        "top_k",
+        "mode",
+        "prompt",
+    }
+    for validation_error in error.errors():
+        safe_error = {
+            key: value
+            for key, value in validation_error.items()
+            if key not in {"input", "ctx", "url"}
+        }
+        location = validation_error.get("loc", ())
+        safe_error["loc"] = [
+            part
+            if (
+                (index == 0 and part in location_roots)
+                or isinstance(part, int)
+                or (isinstance(part, str) and part in known_fields)
+            )
+            else "field"
+            for index, part in enumerate(location)
+        ]
+        safe_errors.append(safe_error)
+    return JSONResponse(
+        status_code=422,
+        content={"detail": safe_errors},
+    )
 
 
 def get_postgres_dsn() -> str:
@@ -165,7 +284,11 @@ def get_sparse_encoder(model_name: str) -> FastEmbedSparseEncoder:
         return encoder
 
 
-def execute_rag_query(request: RagQueryInput) -> RagQueryResult:
+def execute_rag_query(
+    request: RagQueryInput,
+    *,
+    structured_investigation: bool = False,
+) -> RagQueryResult:
     def record_embedding_usage(token_counts: dict[str, int]) -> None:
         span = trace.get_current_span()
         if span.is_recording():
@@ -202,6 +325,8 @@ def execute_rag_query(request: RagQueryInput) -> RagQueryResult:
                     model=settings.litellm_model,
                 ),
             )
+            if structured_investigation:
+                return service.query(request, structured_investigation=True)
             return service.query(request)
         finally:
             qdrant_client.close()
@@ -369,6 +494,97 @@ def rag_query(request: RagQueryInput) -> RagQueryResponse:
                     text=chunk.text,
                 )
                 for chunk in result.chunks
+            ],
+            model=result.model,
+            latency_ms=result.latency_ms,
+            trace_id=trace_id,
+        )
+
+
+def execute_rag_investigation(request: ClaimsInvestigationRequest) -> RagQueryResult:
+    question = (
+        "Prepare a non-decisional evidence brief from this unverified claim narrative: "
+        f"{request.narrative}"
+    )
+    rag_request = RagQueryInput(
+        question=question,
+        policy_id=request.policy_id,
+        loss_date=request.loss_date,
+        guidance_as_of=request.guidance_as_of,
+        top_k=5,
+        mode="hybrid_rerank",
+    )
+    return execute_rag_query(rag_request, structured_investigation=True)
+
+
+@app.post(
+    "/v1/investigations",
+    response_model=ClaimsInvestigationResponse,
+)
+def investigate_claim(request: ClaimsInvestigationRequest) -> ClaimsInvestigationResponse:
+    with tracer.start_as_current_span("claims.investigation"):
+        try:
+            result = execute_rag_investigation(request)
+        except AmbiguousBasePolicyError as error:
+            raise HTTPException(
+                status_code=409,
+                detail="Applicable policy version is ambiguous",
+            ) from error
+        except NoApplicableBasePolicyError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="No applicable policy version found",
+            ) from error
+        except QueryDependencyError as error:
+            logger.exception("claims investigation dependency failed")
+            raise HTTPException(
+                status_code=502,
+                detail="Claims investigation dependency failed",
+            ) from error
+
+        investigation = result.investigation
+        if investigation is None:
+            raise HTTPException(
+                status_code=502,
+                detail="Claims investigation response invalid",
+            )
+
+        citations_by_ref = {citation.ref: citation for citation in investigation.citations}
+        cited_chunk_ids = {
+            citation.chunk_id for citation in investigation.citations
+        }
+        span_context = trace.get_current_span().get_span_context()
+        trace_id = f"{span_context.trace_id:032x}" if span_context.is_valid else None
+        return ClaimsInvestigationResponse(
+            claim_id=request.claim_id,
+            policy_id=request.policy_id,
+            loss_date=request.loss_date,
+            guidance_as_of=request.guidance_as_of or request.loss_date,
+            status=investigation.status,
+            summary=investigation.summary,
+            summary_citations=[
+                citations_by_ref[ref] for ref in investigation.summary_refs
+            ],
+            findings=[
+                InvestigationFindingResponse(
+                    text=finding.text,
+                    citations=[citations_by_ref[ref] for ref in finding.refs],
+                )
+                for finding in investigation.findings
+            ],
+            unresolved_questions=list(investigation.unresolved_questions),
+            evidence=[
+                InvestigationEvidenceResponse(
+                    chunk_id=chunk.chunk_id,
+                    ref=chunk.ref,
+                    title=chunk.title,
+                    section=chunk.section,
+                    clause=chunk.clause,
+                    page=chunk.page,
+                    text=chunk.text,
+                )
+                for chunk in result.chunks
+                if chunk.chunk_id in cited_chunk_ids
             ],
             model=result.model,
             latency_ms=result.latency_ms,

@@ -13,9 +13,10 @@ spec:
       labels:
         app: ai-api
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: ai-api
-          image: localhost/ai-api:stage2
+          image: localhost/ai-api:stage3.9
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

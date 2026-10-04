@@ -9,7 +9,8 @@ Learning + portfolio build of an **Enterprise AI Decision & Operations Platform*
 Kubernetes. Built in 10 stages (see [docs/ROADMAP.md](docs/ROADMAP.md)). First business domain:
 insurance claims investigation.
 
-- Current stage: **2 - Document ingestion + RAG** (Phases 2.0-2.3 complete; Phase 2.4 deployed with a tracked top_k=20 generation follow-up; Phases 2.5 evaluation and 2.6 observability + docs complete; plan: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md))
+- Current implementation stage: **3 - Claims Copilot** (API/UI deployed locally; unit and browser tests pass; live Groq structured generation currently returns `json_validate_failed`; plan: [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md))
+- Stage 2 remains **in progress**: Phases 2.5 evaluation and 2.6 observability + docs are complete; its Phase 2.4 `top_k=20` generation follow-up remains open in [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
 ## Working agreement
@@ -33,7 +34,7 @@ insurance claims investigation.
 |---------|--------|-------|
 | Cluster | kind on Podman (`KIND_EXPERIMENTAL_PROVIDER=podman`), cluster `ai-stage1` | `infrastructure/kind/` |
 | Namespace | `ai-platform` | `infrastructure/kubernetes/base/` (kustomize) |
-| API | FastAPI `apps/ai-api` + shared `rag/` package | image `localhost/ai-api:stage2` |
+| API | FastAPI `apps/ai-api` + shared `rag/` package | image `localhost/ai-api:stage3.9` |
 | LLM gateway | LiteLLM, alias `gpt-oss-20b` -> `groq/openai/gpt-oss-20b` | `litellm-configmap.yaml` |
 | Vector DB | Qdrant v1.19.1; named-vector changes use `qdrant-client` v1.19.1 | `qdrant.yaml` |
 | Relational | PostgreSQL 16 | `postgres.yaml` |
@@ -54,7 +55,11 @@ QDRANT_SNAPSHOT_CONFIRMED=1 ./scripts/upgrade-qdrant.sh # staged 1.15 -> 1.19 up
 ./scripts/provision-rag-query-role.sh  # create read-only rag_query role for Phase 2.3
 ./scripts/port-forward.sh       # ai-api on localhost:8000
 ./scripts/smoke-test.sh         # /healthz + /v1/investigate + /v1/rag/query
+./scripts/build-claims-frontend.sh # build + kind load claims frontend image
+./scripts/port-forward-claims-frontend.sh # frontend on localhost:4173
+./scripts/claims-copilot-smoke.sh # one model-backed Stage 3 request; no retries
 ./scripts/ingest.sh            # run/re-run Phase 2.2 batch ingestion Job
+cd apps/frontend && npm ci && npm run test:coverage && npm run test:e2e
 python3 -m pytest -q tests/unit
 kubectl -n ai-platform logs deploy/otel-collector --tail=200   # traces
 kubectl kustomize infrastructure/kubernetes/base >/dev/null    # validate manifests
