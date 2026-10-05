@@ -12,6 +12,7 @@ resources:
   - otel-collector-configmap.yaml
   - otel-collector.yaml
   - ai-api.yaml
+  - claims-service.yaml
   - claims-frontend.yaml
   - rag-ingest-job.yaml
   - reranker.yaml

@@ -9,6 +9,7 @@ COPY apps/ai-api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY apps/ai-api/main.py /app/main.py
+COPY agents/ /app/agents/
 COPY rag/ /app/rag/
 COPY data/generated/ /app/data/generated/
 

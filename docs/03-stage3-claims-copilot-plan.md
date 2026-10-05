@@ -2,7 +2,7 @@
 
 Status: **DONE**
 Pattern: Human-in-the-loop investigation
-Builds on: Stage 2 RAG; Stage 2 remains **IN PROGRESS**, including the open Phase 2.4 `top_k=20` generation follow-up.
+Builds on: Stage 2 RAG, now complete (including the Phase 2.4 `top_k=20` follow-up verified 2026-10-05).
 
 ## 0. Outcome
 
@@ -52,7 +52,8 @@ handler; it does not decide coverage or recommend approve/deny outcomes.
    known-answerable HOME-002 investigation at `top_k=5`. Correlate its trace ID with collector
    output without automatically retrying the model-backed request.
 6. Update README, roadmap, and AGENTS status/runbooks to reflect Stage 3 progress while keeping
-   Stage 2 in progress and the Phase 2.4 follow-up open.
+   Stage 2 open until its independent Phase 2.4 follow-up passes. (This prerequisite was later
+   completed and recorded in the Stage 2 plan.)
 
 ## 4. Acceptance criteria
 
@@ -68,7 +69,8 @@ handler; it does not decide coverage or recommend approve/deny outcomes.
   states; cited evidence can be inspected on desktop and mobile without layout overflow.
 - Kustomize renders; frontend/API images build and load locally; hardened frontend resources roll
   out; a live trace is visible in the collector.
-- Documentation does not mark Stage 2 complete or close the Phase 2.4 `top_k=20` follow-up.
+- Stage 3 documentation records the delivered scope and limitations; Stage 4 APIs and workflows
+  remain out of scope.
 
 ## 5. Verification
 
@@ -100,5 +102,5 @@ only, without authentication or real-data controls.
   parsing; the final one-shot HOME-002 request returned `answered`, 6 findings, and 5 cited evidence
   chunks. Its trace ID was correlated with `claims.investigation`, `rag.source_resolution`,
   `rag.embed`, `rag.sparse_embed`, `rag.search`, `rag.rerank`, and `rag.generate` spans.
-- Stage 3 acceptance is complete. Stage 2 and its Phase 2.4 `top_k=20` follow-up remain open and
-  unchanged.
+- Stage 3 acceptance is complete. Stage 2's Phase 2.4 `top_k=20` follow-up subsequently passed
+  live verification on 2026-10-05; see [the Stage 2 plan](02-stage2-rag-plan.md).

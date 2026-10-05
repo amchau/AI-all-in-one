@@ -10,7 +10,8 @@ Kubernetes. Built in 10 stages (see [docs/ROADMAP.md](docs/ROADMAP.md)). First b
 insurance claims investigation.
 
 - Stage 3 Claims Copilot: **Done** (API/UI deployed locally; unit and browser tests pass; live cited brief and collector trace verified; plan: [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md))
-- Stage 2 remains **in progress**: Phases 2.5 evaluation and 2.6 observability + docs are complete; its Phase 2.4 `top_k=20` generation follow-up remains open in [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
+- Stage 4 claims tool-calling workflow: approved and in progress; API and synthetic claims service are deployed locally, and a bounded live request with collector-correlated trace passed. Unit/integration checks pass; evaluation: [docs/eval/stage4-claims-agent-report.md](docs/eval/stage4-claims-agent-report.md); next-session handoff: [docs/04-stage4-handoff.md](docs/04-stage4-handoff.md); plan: [docs/04-stage4-tool-calling-agent-plan.md](docs/04-stage4-tool-calling-agent-plan.md).
+- Stage 2 is **done**: the Phase 2.4 `top_k=20` hybrid generation follow-up passed live verification; Phases 2.5 and 2.6 are complete. Results: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
 ## Working agreement
@@ -34,7 +35,7 @@ insurance claims investigation.
 |---------|--------|-------|
 | Cluster | kind on Podman (`KIND_EXPERIMENTAL_PROVIDER=podman`), cluster `ai-stage1` | `infrastructure/kind/` |
 | Namespace | `ai-platform` | `infrastructure/kubernetes/base/` (kustomize) |
-| API | FastAPI `apps/ai-api` + shared `rag/` package | image `localhost/ai-api:stage3.11` |
+| API | FastAPI `apps/ai-api` + shared `rag/` and `agents/` packages | image `localhost/ai-api:stage4.0` |
 | LLM gateway | LiteLLM, alias `gpt-oss-20b` -> `groq/openai/gpt-oss-20b` | `litellm-configmap.yaml` |
 | Vector DB | Qdrant v1.19.1; named-vector changes use `qdrant-client` v1.19.1 | `qdrant.yaml` |
 | Relational | PostgreSQL 16 | `postgres.yaml` |
@@ -49,6 +50,7 @@ insurance claims investigation.
 ```bash
 ./scripts/kind-create.sh        # create cluster (podman provider)
 ./scripts/build-ai-api.sh       # build + kind load ai-api image
+./scripts/build-claims-service.sh # build + kind load synthetic claims service
 ./scripts/deploy-stage1.sh      # .env -> secret stage1-secrets, apply kustomize, wait rollouts
 QDRANT_SNAPSHOT_CONFIRMED=1 ./scripts/upgrade-qdrant.sh # staged 1.15 -> 1.19 upgrade after snapshot
 ./scripts/provision-rag-ingest-role.sh # create least-privilege rag_ingest role/schema ownership
@@ -63,7 +65,7 @@ cd apps/frontend && npm ci && npm run test:coverage && npm run test:e2e
 python3 -m pytest -q tests/unit
 kubectl -n ai-platform logs deploy/otel-collector --tail=200   # traces
 kubectl kustomize infrastructure/kubernetes/base >/dev/null    # validate manifests
-bash -n scripts/*.sh && python3 -m py_compile apps/ai-api/main.py
+bash -n scripts/*.sh && python3 -m py_compile apps/ai-api/main.py apps/claims-service/main.py agents/claims/*.py
 ```
 
 ## Secrets

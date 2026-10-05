@@ -9,9 +9,9 @@ a measured problem, recorded in an ADR.
 | Stage | Name | Pattern | Status | Doc |
 |-------|------|---------|--------|-----|
 | 1 | Platform foundation on Kubernetes | AI Factory | Done | [01](01-stage1-foundation.md) |
-| 2 | Document ingestion + RAG | Knowledge Intelligence | In progress (2.5 evaluation and 2.6 observability + docs complete; 2.4 top_k=20 follow-up remains open) | [02](02-stage2-rag-plan.md) |
-| 3 | Claims Copilot (UI, structured investigation output) | Human-in-the-loop | Done (API/UI deployed; live brief and trace verified; Stage 2 remains open) | [03](03-stage3-claims-copilot-plan.md) |
-| 4 | Tool-calling agent (fake Claims/Policy/Customer/Payments/Fraud APIs) | Agentic workflow, MCP-style tools | - | - |
+| 2 | Document ingestion + RAG | Knowledge Intelligence | Done (2.4 top_k=20 live hybrid verification passed; 2.5 and 2.6 complete) | [02](02-stage2-rag-plan.md) |
+| 3 | Claims Copilot (UI, structured investigation output) | Human-in-the-loop | Done (API/UI deployed; live brief and trace verified) | [03](03-stage3-claims-copilot-plan.md) |
+| 4 | Claims tool-calling workflow (synthetic read-only Claims/Policy/Customer/Payments/Fraud APIs) | Bounded tool orchestration | In progress (API and claims-service deployed; live request/trace verified; tests pass; evaluation limitations documented) | [04](04-stage4-tool-calling-agent-plan.md), [handoff](04-stage4-handoff.md), [eval](eval/stage4-claims-agent-report.md) |
 | 5 | Claims risk model (XGBoost/LightGBM) | Decision Intelligence | - | - |
 | 6 | Agent + ML + RAG orchestration | Hybrid AI | - | - |
 | 7 | Human approval workflow (Temporal) | Governed autonomy | - | - |
@@ -41,8 +41,8 @@ docs/          stage docs, adr/, eval/, security.md, threat-model.md
 | 002 | Vector store: Qdrant | 2 | Accepted |
 | 003 | Embeddings (OpenRouter) + reranker (TEI pod) | 2 | Accepted |
 | 004 | Document model and chunking strategy | 2 | Accepted |
-| 005 | Agent framework (plain Python vs framework) | 4 | - |
-| 006 | Tool protocol (REST vs MCP) | 4 | - |
+| 005 | Claims agent implementation (plain Python vs framework) | 4 | Proposed |
+| 006 | Claims tool protocol (REST adapter vs MCP) | 4 | Proposed |
 | 007 | Workflow engine (Temporal) | 7 | - |
 | 008 | Observability stack expansion | 9 | - |
 | 009 | Dense RAG query contract | 2 | Accepted |

@@ -1,6 +1,6 @@
 # Stage 2 - Insurance Knowledge System (Enterprise RAG)
 
-Status: **IN PROGRESS** - Phases 2.5 evaluation and 2.6 observability + docs complete; Phase 2.4 top_k=20 generation follow-up remains open
+Status: **DONE** - Phases 2.4, 2.5, and 2.6 complete; top_k=20 bounded-generation follow-up passed live verification
 Pattern: #1 Enterprise RAG / Knowledge Intelligence
 Builds on: Stage 1 platform (kind, LiteLLM -> Groq, Qdrant, Postgres, MinIO, OTEL)
 
@@ -148,8 +148,8 @@ Phase 2.5 evaluation calibrates one. Upstream failures return sanitized service 
 | 2.1 Corpus | `data/` Markdown corpus + `scripts/render_corpus.py` -> PDFs and metadata manifest | Complete: 8 PDFs, validated front matter, metadata/hash manifest, deterministic rerender; 6 focused tests passed |
 | 2.2 Ingestion | `rag/ingestion` validates manifest, parses/chunks PDFs, embeds through LiteLLM, stores raw PDFs in MinIO, registers lineage in Postgres, and upserts dense vectors to Qdrant; Kubernetes Job | Complete: 8 documents/44 chunks registered; 44 Qdrant points and 8 MinIO objects; dedicated-role rerun completed with zero changes/writes |
 | 2.3 Dense RAG | Temporal source selection, dense search, grounded generation, validated inline citations; `/v1/rag/query` | Live smoke query returns cited answer; unit tests verify no-evidence abstention |
-| 2.4 Hybrid + rerank | Sparse BM25 vectors, native Qdrant RRF fusion, shared metadata filters, TEI reranking, and backward-compatible API modes | Deployed; 44 points verified with dense+sparse vectors and ingestion no-op verified. Close after bounded-generation fix passes top_k=20 tests; see tracked follow-up below |
-| 2.5 Evaluation | `tests/evaluation/golden.yaml` (35 Qs, 105 API attempts), `scripts/run_rag_eval.py`, report in `docs/eval/` | Complete: all 105 requests succeeded; comparative metrics and per-case outcomes recorded; top_k=20 issue remains tracked separately |
+| 2.4 Hybrid + rerank | Sparse BM25 vectors, native Qdrant RRF fusion, shared metadata filters, TEI reranking, and backward-compatible API modes | Complete: deployed; 44 points verified with dense+sparse vectors; bounded-generation tests and live hybrid top_k=20 request passed |
+| 2.5 Evaluation | `tests/evaluation/golden.yaml` (35 Qs, 105 API attempts), `scripts/run_rag_eval.py`, report in `docs/eval/` | Complete: all 105 requests succeeded; comparative metrics and per-case outcomes recorded |
 | 2.6 Observability + docs | Span-contract tests; smoke response/trace validation; README + stage-doc procedure | Complete: all three smoke trace IDs correlated with collector output; common and mode-specific span paths verified; no raw question/evidence attributes; 154 unit tests pass |
 
 Testing: unit tests for chunker, payload builder, source-date selection, prompt assembly, citation
@@ -305,7 +305,7 @@ top_k=20 generation follow-up tracked below.
      all three modes including `hybrid` at `top_k=20`. Phase 2.4 demonstrates working behavior only;
      Phase 2.5 owns comparative quality claims and RRF tuning.
 
-### Phase 2.4 outstanding closure item
+### Phase 2.4 generation follow-up — CLOSED
 
 Observed 2026-10-04: the deployed Qdrant `1.19.1` collection has 44 points, all with valid dense
 and populated sparse vectors; Postgres has 8 documents/44 chunks; the latest ingestion rerun was a
@@ -314,7 +314,7 @@ returned `insufficient_evidence` at `top_k=5` and a cited answer at `top_k=8`. A
 `top_k=20` diagnostic returned HTTP 502. LiteLLM logs identify Groq `json_validate_failed` with
 empty `failed_generation`; they do not prove that the 800-token completion limit caused it.
 
-Required before declaring Phase 2.4 closed or claiming unrestricted `top_k` support:
+Phase 2.4 closure criteria (all satisfied):
 
 1. Keep request `top_k` controlling retrieval and response size, but pass only the highest-ranked
       8 whole chunks to initial generation. Return the full retrieved chunk list unchanged.
@@ -326,8 +326,14 @@ Required before declaring Phase 2.4 closed or claiming unrestricted `top_k` supp
 4. Test top_k=20 response size, 8-to-4 retry, retry restrictions, and citation mapping. Then
       smoke top_k=20 through the deployed hybrid endpoint and confirm the error no longer occurs.
 
-This item does not block Phase 2.5's fixed top_k=5 baseline evaluation. Report provider failures
-separately from answerability/abstention results, and keep this follow-up visible until closed.
+Closure record (2026-10-05): rebuilt `localhost/ai-api:stage4.0` and rolled out only the `ai-api`
+Deployment. A single live `hybrid` request at `top_k=20` returned HTTP 200 with `status=answered`,
+20 chunks, and 2 citations; every citation mapped to a returned chunk. The request completed in
+1774 ms with trace ID `687a78b6c8a6ea8cd3d56d1305841911`. The collector contained the matching
+trace and its `rag.source_resolution`, `rag.embed`, `rag.sparse_embed`, `rag.search`,
+`rag.generate`, and `rag.query` spans. The previously recorded unit tests cover the 8-chunk initial
+generation bound, one allowlisted 8-to-4 retry, retry restrictions, and citation validation. The
+follow-up is closed; Phase 2.4 and Stage 2 are complete.
 
 ### Phase 2.5 evaluation plan
 
@@ -406,7 +412,8 @@ search, and generation spans; hybrid modes also contained sparse embedding, and 
 reranking. Verified bounded model/mode/count/score attributes and no raw question/evidence attributes.
 The service now marks failed dependency spans as `ERROR` without recording raw exception details;
 wrapped dependency errors suppress chained provider details before API exception logging. All 154
-unit tests passed. The Phase 2.4 `top_k=20` generation follow-up remains open.
+unit tests passed. The Phase 2.4 `top_k=20` generation follow-up was closed by the 2026-10-05
+live verification recorded above.
 
 ## 7. Planned file additions
 

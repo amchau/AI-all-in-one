@@ -97,3 +97,13 @@ idempotent and must not discard the live collection or deterministic point IDs.
   no 502, response size is bounded by `top_k`, and every citation maps to a returned chunk.
 - Phase 2.5 measures whether this context policy harms recall/faithfulness; 8/4 are operational
   bounds, not a claim of optimal answer quality.
+
+### Live follow-up (2026-10-05)
+
+Rebuilt and rolled out only the `ai-api` Deployment. One `hybrid` request at `top_k=20` returned
+HTTP 200 with an answered status, 20 chunks, and 2 citations; both citations mapped to returned
+chunks. Latency was 1774 ms. Trace `687a78b6c8a6ea8cd3d56d1305841911` was found in collector output
+with `rag.source_resolution`, `rag.embed`, `rag.sparse_embed`, `rag.search`, `rag.generate`, and
+`rag.query` spans. Together with the unit tests above, this closes the follow-up. It verifies the
+bounded-generation operational behavior for this request, not comparative answer quality; that
+remains the scope and limitation of Phase 2.5's evaluation.

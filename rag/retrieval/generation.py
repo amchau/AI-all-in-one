@@ -63,13 +63,16 @@ class LiteLLMAnswerGenerator:
         self.model = model
 
     def generate(self, question: str, chunks: list[RetrievedChunk]) -> GroundedAnswer:
-        grounded_payload, response_payload = self._request_payload(
+        initial_chunks = chunks[:8]
+        fallback_chunks = chunks[:4]
+        grounded_payload, response_payload, evidence_chunks = self._request_payload(
             question,
-            chunks,
+            initial_chunks,
             system_prompt=_SYSTEM_PROMPT,
             abstention_payload={"abstain": True, "claims": []},
+            json_validation_fallback_chunks=fallback_chunks,
         )
-        answer = parse_grounded_answer(grounded_payload, chunks)
+        answer = parse_grounded_answer(grounded_payload, evidence_chunks)
         return replace(answer, **self._usage_counts(response_payload))
 
     def generate_investigation(
@@ -77,7 +80,7 @@ class LiteLLMAnswerGenerator:
         question: str,
         chunks: list[RetrievedChunk],
     ) -> GroundedInvestigation:
-        grounded_payload, response_payload = self._request_payload(
+        grounded_payload, response_payload, evidence_chunks = self._request_payload(
             question,
             chunks,
             system_prompt=_INVESTIGATION_SYSTEM_PROMPT,
@@ -91,7 +94,7 @@ class LiteLLMAnswerGenerator:
                 "unresolved_questions": [],
             },
         )
-        answer = parse_grounded_investigation(grounded_payload, chunks)
+        answer = parse_grounded_investigation(grounded_payload, evidence_chunks)
         return replace(answer, **self._usage_counts(response_payload))
 
     def _request_payload(
@@ -104,7 +107,9 @@ class LiteLLMAnswerGenerator:
         raise_on_refusal: bool = False,
         enforce_json_mode: bool = True,
         abstention_payload: dict[str, Any],
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        json_validation_fallback_chunks: list[RetrievedChunk] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any], list[RetrievedChunk]]:
+        evidence_chunks = chunks
         evidence = [
             {
                 "ref": chunk.ref,
@@ -142,6 +147,36 @@ class LiteLLMAnswerGenerator:
             )
         except httpx.RequestError as error:
             raise GenerationError("LiteLLM chat request failed") from error
+        if (
+            response.is_error
+            and json_validation_fallback_chunks is not None
+            and self._is_json_validation_error(response)
+        ):
+            evidence_chunks = json_validation_fallback_chunks
+            evidence = [
+                {
+                    "ref": chunk.ref,
+                    "doc_id": chunk.doc_id,
+                    "title": chunk.title,
+                    "section": chunk.section,
+                    "clause": chunk.clause,
+                    "page": chunk.page,
+                    "text": chunk.text,
+                }
+                for chunk in evidence_chunks
+            ]
+            payload["messages"][1]["content"] = json.dumps(
+                {"question": question, "evidence": evidence},
+                ensure_ascii=False,
+            )
+            try:
+                response = self._client.post(
+                    self._url,
+                    headers={"Authorization": f"Bearer {self._master_key}"},
+                    json=payload,
+                )
+            except httpx.RequestError as error:
+                raise GenerationError("LiteLLM chat retry failed") from error
         if response.is_error:
             raise GenerationError(
                 f"LiteLLM chat request failed with HTTP {response.status_code}"
@@ -181,7 +216,16 @@ class LiteLLMAnswerGenerator:
             raise AnswerValidationError("invalid grounded answer") from error
         if not isinstance(grounded_payload, dict):
             raise AnswerValidationError("invalid grounded answer")
-        return grounded_payload, response_payload
+        return grounded_payload, response_payload, evidence_chunks
+
+    @staticmethod
+    def _is_json_validation_error(response: httpx.Response) -> bool:
+        try:
+            payload = response.json()
+        except ValueError:
+            return False
+        error = payload.get("error") if isinstance(payload, dict) else None
+        return isinstance(error, dict) and error.get("code") == "json_validate_failed"
 
     @staticmethod
     def _usage_counts(response_payload: dict[str, Any]) -> dict[str, int]:

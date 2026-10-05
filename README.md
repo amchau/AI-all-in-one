@@ -6,8 +6,9 @@ insurance claims investigation.
 Current progress:
 
 - Stage 1 platform foundation is complete.
-- Stage 2 document ingestion + RAG is in progress; Phases 2.5 evaluation and 2.6 observability + docs are complete. The Phase 2.4 top_k=20 generation follow-up remains open.
+- Stage 2 document ingestion + RAG is complete. The Phase 2.4 top_k=20 generation follow-up passed its live hybrid verification on 2026-10-05.
 - Stage 3 Claims Copilot is complete. API/UI are deployed locally; automated checks and a live cited brief with collector trace pass.
+- Stage 4 bounded claims tool-calling workflow is in progress; the API and synthetic claims-service are deployed, a bounded live request and collector-correlated trace passed, and unit/integration checks pass. See the [Stage 4 evaluation report](docs/eval/stage4-claims-agent-report.md) and [next-session handoff](docs/04-stage4-handoff.md).
 - See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md), and [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md).
 
 ## Stack
@@ -37,7 +38,10 @@ Note: scripts auto-select Podman for kind when available.
 ```text
 apps/
   ai-api/
+  claims-service/
   frontend/
+agents/
+  claims/
 docs/
   adr/
 infrastructure/
@@ -71,7 +75,7 @@ cp .env.example .env
 ```
 
 `deploy-stage1.sh` safely parses `.env` and creates/updates Kubernetes secret `stage1-secrets`.
-The build script creates the shared `localhost/ai-api:stage3.11` image. The ingestion Job is
+The API build script creates `localhost/ai-api:stage4.0`. The ingestion Job is
 registered but suspended during normal deployment. On a fresh database, the script defers only
 the API readiness wait while `rag_query` is absent; the API becomes ready after the query role and
 schema grants are provisioned.
@@ -189,9 +193,13 @@ make coverage decisions or persist claims. The narrative is sent through LiteLLM
 hosted embedding (currently OpenRouter) and generation (currently Groq) providers, so use synthetic
 text only and never enter real PII;
 provider retention is outside this repository's control.
-Stage 2 remains in progress, including its open Phase 2.4 `top_k=20` follow-up. The legacy
+Stage 2 and its Phase 2.4 `top_k=20` follow-up are now complete. The legacy
 cluster-internal `/v1/investigate` endpoint remains for existing callers; the UI uses the grounded
-`/v1/investigations` endpoint.
+`/v1/investigations` endpoint. Stage 4 adds the separate synthetic-only
+`POST /v1/claims/agent-investigations` endpoint; it performs bounded, read-only tool lookups and
+may retrieve policy evidence through the existing RAG service. The endpoint does not make coverage
+or fraud determinations and is not an authenticated production interface. Stage 4's API and mock service are now deployed to the local cluster; see the [Stage 4 execution and evaluation report](docs/eval/stage4-claims-agent-report.md) for measured checks and limitations. The Stage 2 `top_k=20` prerequisite passed before integration. To build/load and roll out the synthetic service, run `./scripts/build-claims-service.sh`, then `kubectl --context kind-ai-stage1 apply -f infrastructure/kubernetes/base/claims-service.yaml` and `kubectl --context kind-ai-stage1 -n ai-platform rollout status deploy/claims-service`.
+
 
 Run the frontend locally against the API port-forward:
 
@@ -218,14 +226,14 @@ and `npm --prefix apps/frontend run test:e2e`. The one-shot live check is
 
 An initial live request returned HTTP 502 because Groq rejected constrained JSON with
 `json_validate_failed`. Stage 3 now uses prompt-guided JSON with strict local validation. The final
-one-shot HOME-002 request returned a cited brief and its trace correlated with the collector. The
-smoke script makes one provider-backed request and does not automatically retry. Stage 2 remains
-in progress; its Phase 2.4 `top_k=20` follow-up is separate and still open.
+one-shot HOME-002 request returned a cited brief and its trace correlated with the collector. The smoke script makes one provider-backed request and does not automatically retry. Stage 2's
+Phase 2.4 `top_k=20` follow-up has since passed live verification; see the Stage 2 execution record.
+
 
 ## Current status
 
 - Stage 1: done (smoke test passing with Groq `gpt-oss-20b`)
-- Stage 2: in progress - Phases 2.5 evaluation and 2.6 observability + docs are complete; known top_k=20 generation follow-up remains before Phase 2.4 closure
+- Stage 2: done - bounded `top_k=20` hybrid generation passed the documented live exit check; see [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md)
 - Stage 3: done - API/UI deployed; unit/browser checks pass; live cited brief and collector trace verified
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).
