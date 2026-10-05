@@ -7,7 +7,7 @@ Current progress:
 
 - Stage 1 platform foundation is complete.
 - Stage 2 document ingestion + RAG is in progress; Phases 2.5 evaluation and 2.6 observability + docs are complete. The Phase 2.4 top_k=20 generation follow-up remains open.
-- Stage 3 Claims Copilot is in progress. API/UI are deployed locally and automated checks pass; live structured generation is blocked by Groq `json_validate_failed`.
+- Stage 3 Claims Copilot is complete. API/UI are deployed locally; automated checks and a live cited brief with collector trace pass.
 - See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md), and [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md).
 
 ## Stack
@@ -71,7 +71,7 @@ cp .env.example .env
 ```
 
 `deploy-stage1.sh` safely parses `.env` and creates/updates Kubernetes secret `stage1-secrets`.
-The build script creates the shared `localhost/ai-api:stage3.9` image. The ingestion Job is
+The build script creates the shared `localhost/ai-api:stage3.11` image. The ingestion Job is
 registered but suspended during normal deployment. On a fresh database, the script defers only
 the API readiness wait while `rag_query` is absent; the API becomes ready after the query role and
 schema grants are provisioned.
@@ -216,15 +216,16 @@ Open `http://127.0.0.1:4173`. Frontend tests are `npm --prefix apps/frontend run
 and `npm --prefix apps/frontend run test:e2e`. The one-shot live check is
 `./scripts/claims-copilot-smoke.sh`; it sends one provider-backed request and never retries.
 
-The frontend, API, and mocked browser flows pass. A live Stage 3 request returned HTTP 502 because
-Groq rejected structured JSON with `json_validate_failed`; the failure trace reached `rag.generate`
-and is visible in the collector. No follow-up model request was made. Keep this provider limitation
-tracked with the open Stage 2 generation follow-up; do not mark Stage 2 complete.
+An initial live request returned HTTP 502 because Groq rejected constrained JSON with
+`json_validate_failed`. Stage 3 now uses prompt-guided JSON with strict local validation. The final
+one-shot HOME-002 request returned a cited brief and its trace correlated with the collector. The
+smoke script makes one provider-backed request and does not automatically retry. Stage 2 remains
+in progress; its Phase 2.4 `top_k=20` follow-up is separate and still open.
 
 ## Current status
 
 - Stage 1: done (smoke test passing with Groq `gpt-oss-20b`)
 - Stage 2: in progress - Phases 2.5 evaluation and 2.6 observability + docs are complete; known top_k=20 generation follow-up remains before Phase 2.4 closure
-- Stage 3: in progress - API/UI deployed; unit and mocked desktop/mobile browser tests pass; live structured generation is blocked by Groq JSON validation
+- Stage 3: done - API/UI deployed; unit/browser checks pass; live cited brief and collector trace verified
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).

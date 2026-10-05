@@ -9,7 +9,7 @@ Learning + portfolio build of an **Enterprise AI Decision & Operations Platform*
 Kubernetes. Built in 10 stages (see [docs/ROADMAP.md](docs/ROADMAP.md)). First business domain:
 insurance claims investigation.
 
-- Current implementation stage: **3 - Claims Copilot** (API/UI deployed locally; unit and browser tests pass; live Groq structured generation currently returns `json_validate_failed`; plan: [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md))
+- Stage 3 Claims Copilot: **Done** (API/UI deployed locally; unit and browser tests pass; live cited brief and collector trace verified; plan: [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md))
 - Stage 2 remains **in progress**: Phases 2.5 evaluation and 2.6 observability + docs are complete; its Phase 2.4 `top_k=20` generation follow-up remains open in [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
@@ -34,7 +34,7 @@ insurance claims investigation.
 |---------|--------|-------|
 | Cluster | kind on Podman (`KIND_EXPERIMENTAL_PROVIDER=podman`), cluster `ai-stage1` | `infrastructure/kind/` |
 | Namespace | `ai-platform` | `infrastructure/kubernetes/base/` (kustomize) |
-| API | FastAPI `apps/ai-api` + shared `rag/` package | image `localhost/ai-api:stage3.9` |
+| API | FastAPI `apps/ai-api` + shared `rag/` package | image `localhost/ai-api:stage3.11` |
 | LLM gateway | LiteLLM, alias `gpt-oss-20b` -> `groq/openai/gpt-oss-20b` | `litellm-configmap.yaml` |
 | Vector DB | Qdrant v1.19.1; named-vector changes use `qdrant-client` v1.19.1 | `qdrant.yaml` |
 | Relational | PostgreSQL 16 | `postgres.yaml` |

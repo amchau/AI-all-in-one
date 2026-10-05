@@ -16,7 +16,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: ai-api
-          image: localhost/ai-api:stage3.9
+          image: localhost/ai-api:stage3.11
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

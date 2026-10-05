@@ -553,6 +553,7 @@ def test_execute_rag_investigation_fixes_mode_and_top_k(monkeypatch) -> None:
     assert rag_request.mode == "hybrid_rerank"
     assert rag_request.top_k == 5
     assert "Flood water entered the ground floor overnight." in rag_request.question
+    assert "Do not determine whether this specific claim is covered;" in rag_request.question
     assert captured["structured_investigation"] is True
 
 

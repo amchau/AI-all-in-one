@@ -157,8 +157,9 @@ def test_generator_returns_structured_grounded_investigation() -> None:
     assert answer.prompt_tokens == 50
     assert answer.completion_tokens == 20
     payload = json.loads(requests[0].content)
-    assert payload["response_format"] == {"type": "json_object"}
+    assert "response_format" not in payload
     assert payload["max_completion_tokens"] == 1200
+    assert "Do not apply policy terms to decide this claim." in payload["messages"][0]["content"]
     assert '"findings":[{"text":"...","refs":["C1"]}]' in payload["messages"][0]["content"]
     client.close()
 

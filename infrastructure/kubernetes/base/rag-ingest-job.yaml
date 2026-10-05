@@ -20,7 +20,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: rag-ingest
-          image: localhost/ai-api:stage3.9
+          image: localhost/ai-api:stage3.11
           imagePullPolicy: IfNotPresent
           command: ["python", "-m", "rag.ingestion"]
           env:

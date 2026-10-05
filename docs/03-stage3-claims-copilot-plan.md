@@ -1,6 +1,6 @@
 # Stage 3 - Claims Copilot
 
-Status: **IN PROGRESS**
+Status: **DONE**
 Pattern: Human-in-the-loop investigation
 Builds on: Stage 2 RAG; Stage 2 remains **IN PROGRESS**, including the open Phase 2.4 `top_k=20` generation follow-up.
 
@@ -87,7 +87,7 @@ Stage 2.5 mode metrics are comparative and do not prove semantic faithfulness. T
 35-case comparison; it is not a coverage decision. The API and UI are for synthetic local-lab use
 only, without authentication or real-data controls.
 
-## 7. Execution record (2026-10-04)
+## 7. Execution record (2026-10-05)
 
 - Added the structured investigation API and local React/Vite UI; deployed only the frontend and
   updated `ai-api` workloads to `kind-ai-stage1`.
@@ -95,8 +95,10 @@ only, without authentication or real-data controls.
   runs passed across desktop and mobile Chromium, including dev proxy allowlisting. Production build, Kustomize render, Nginx config,
   and touched shell syntax checks passed.
 - Frontend health, same-origin API proxy, and API dependency health checks passed.
-- One corrected live investigation attempt at fixed `hybrid_rerank`, `top_k=5` returned HTTP 502.
-  LiteLLM reported Groq `json_validate_failed`; retrieval and reranking spans completed, and the
-  `rag.generate` failure was exported. No automatic or follow-up model request was made.
-- Stage 3 remains in progress pending a successful live generated brief. Stage 2 and the Phase 2.4
-  `top_k=20` follow-up remain open; resolving the provider JSON failure is not folded into this stage.
+- An initial live request returned HTTP 502 because Groq rejected constrained JSON with
+  `json_validate_failed`. Stage 3 generation was changed to prompt-guided JSON with strict local
+  parsing; the final one-shot HOME-002 request returned `answered`, 6 findings, and 5 cited evidence
+  chunks. Its trace ID was correlated with `claims.investigation`, `rag.source_resolution`,
+  `rag.embed`, `rag.sparse_embed`, `rag.search`, `rag.rerank`, and `rag.generate` spans.
+- Stage 3 acceptance is complete. Stage 2 and its Phase 2.4 `top_k=20` follow-up remain open and
+  unchanged.

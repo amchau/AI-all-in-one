@@ -503,8 +503,9 @@ def rag_query(request: RagQueryInput) -> RagQueryResponse:
 
 def execute_rag_investigation(request: ClaimsInvestigationRequest) -> RagQueryResult:
     question = (
-        "Prepare a non-decisional evidence brief from this unverified claim narrative: "
-        f"{request.narrative}"
+        "Summarize source clauses relevant to these reported facts. Do not determine whether "
+        "this specific claim is covered; state policy wording as document facts only. "
+        f"Claim narrative: {request.narrative}"
     )
     rag_request = RagQueryInput(
         question=question,
