@@ -1,0 +1,17 @@
+{
+  "dataset_sha256": "83d822aa56de3b134553e40466a923beb2b5e50cbdc94aec18fd6fefa8a7d6d2",
+  "dataset_version": "synthetic-archetypes-v1",
+  "feature_names": [
+    "duplicate_document_count",
+    "date_inconsistency_count",
+    "missing_required_evidence_count",
+    "prior_open_claim_count",
+    "estimate_limit_ratio"
+  ],
+  "minimum_recall": 0.9,
+  "model_sha256": "cfb12f6a9cc178ebfd98c17f3a94a0792bfb47ad1dc50f8ae5abaa43b17410a5",
+  "model_version": "stage5-cfb12f6a9cc1",
+  "synthetic_only": true,
+  "threshold": 0.9391385316848755,
+  "triage_margin": 0.05
+}

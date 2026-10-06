@@ -1,0 +1,154 @@
+{
+  "archetypes": {
+    "negative": 20,
+    "positive": 24
+  },
+  "candidates": {
+    "logistic_regression": {
+      "holdout": {
+        "brier_score": 0.16000389403554097,
+        "expected_calibration_error": 0.06128610527809997,
+        "false_negative": 7,
+        "false_positive": 66,
+        "pr_auc": 0.8648496559975687,
+        "precision": 0.6842105263157895,
+        "recall": 0.9533333333333334,
+        "recall_gate_passed": true,
+        "review_volume": 209,
+        "review_volume_fraction": 0.774074074074074,
+        "true_negative": 54,
+        "true_positive": 143
+      },
+      "validation": {
+        "brier_score": 0.17543046001668752,
+        "expected_calibration_error": 0.11994080316763878,
+        "false_negative": 13,
+        "false_positive": 48,
+        "pr_auc": 0.872368131417436,
+        "precision": 0.7405405405405405,
+        "recall": 0.9133333333333333,
+        "recall_gate_passed": true,
+        "review_volume": 185,
+        "review_volume_fraction": 0.6851851851851852,
+        "true_negative": 72,
+        "true_positive": 137
+      },
+      "validation_threshold": 0.1701789341822944
+    },
+    "majority": {
+      "holdout": {
+        "brier_score": 0.24720578566732415,
+        "expected_calibration_error": 0.017094017094017144,
+        "false_negative": 0,
+        "false_positive": 120,
+        "pr_auc": 0.5555555555555556,
+        "precision": 0.5555555555555556,
+        "recall": 1.0,
+        "recall_gate_passed": true,
+        "review_volume": 270,
+        "review_volume_fraction": 1.0,
+        "true_negative": 0,
+        "true_positive": 150
+      },
+      "validation": {
+        "brier_score": 0.24720578566732415,
+        "expected_calibration_error": 0.017094017094017144,
+        "false_negative": 0,
+        "false_positive": 120,
+        "pr_auc": 0.5555555555555556,
+        "precision": 0.5555555555555556,
+        "recall": 1.0,
+        "recall_gate_passed": true,
+        "review_volume": 270,
+        "review_volume_fraction": 1.0,
+        "true_negative": 0,
+        "true_positive": 150
+      },
+      "validation_threshold": 0.5384615384615384
+    },
+    "xgboost": {
+      "holdout": {
+        "brier_score": 0.002882359844169501,
+        "expected_calibration_error": 0.05319014191627504,
+        "false_negative": 0,
+        "false_positive": 0,
+        "pr_auc": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "recall_gate_passed": true,
+        "review_volume": 150,
+        "review_volume_fraction": 0.5555555555555556,
+        "true_negative": 120,
+        "true_positive": 150
+      },
+      "validation": {
+        "brier_score": 0.0031988578715227423,
+        "expected_calibration_error": 0.0564106868373023,
+        "false_negative": 0,
+        "false_positive": 0,
+        "pr_auc": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "recall_gate_passed": true,
+        "review_volume": 150,
+        "review_volume_fraction": 0.5555555555555556,
+        "true_negative": 120,
+        "true_positive": 150
+      },
+      "validation_threshold": 0.9391385316848755
+    }
+  },
+  "dataset_sha256": "83d822aa56de3b134553e40466a923beb2b5e50cbdc94aec18fd6fefa8a7d6d2",
+  "dataset_version": "synthetic-archetypes-v1",
+  "feature_names": [
+    "duplicate_document_count",
+    "date_inconsistency_count",
+    "missing_required_evidence_count",
+    "prior_open_claim_count",
+    "estimate_limit_ratio"
+  ],
+  "limitations": [
+    "Labels are derived from a synthetic rule and do not represent fraud ground truth.",
+    "Generated variants do not increase the count of independent archetypes.",
+    "Holdout metrics do not establish real-world quality or operational performance."
+  ],
+  "minimum_recall": 0.9,
+  "promotion": {
+    "model_version": "stage5-cfb12f6a9cc1",
+    "passed": true,
+    "reason": "xgboost_recall_and_precision_gates_passed",
+    "xgboost_must_meet_recall_gate": true,
+    "xgboost_precision_must_exceed_best_baseline": true
+  },
+  "rows": {
+    "test": 270,
+    "total": 1320,
+    "train": 780,
+    "validation": 270
+  },
+  "runtime": {
+    "python": "3.12.14",
+    "scikit_learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
+  "seeds": {
+    "dataset": 1729,
+    "model": 27182,
+    "split": 31415
+  },
+  "split_archetypes": {
+    "test": {
+      "negative": 4,
+      "positive": 5
+    },
+    "train": {
+      "negative": 12,
+      "positive": 14
+    },
+    "validation": {
+      "negative": 4,
+      "positive": 5
+    }
+  },
+  "variants_per_archetype": 30
+}

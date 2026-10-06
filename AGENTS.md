@@ -11,6 +11,7 @@ insurance claims investigation.
 
 - Stage 3 Claims Copilot: **Done** (API/UI deployed locally; unit and browser tests pass; live cited brief and collector trace verified; plan: [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md))
 - Stage 4 claims tool-calling workflow: **Done** for the local synthetic learning scope, reviewed and accepted 2026-10-06. API and synthetic claims service are deployed locally; unit/integration checks pass and live RAG evidence has been exercised. Evaluation limitations, including incomplete source-domain coverage in the saved all-domains sample, are recorded in [docs/eval/stage4-claims-agent-report.md](docs/eval/stage4-claims-agent-report.md). Handoff: [docs/04-stage4-handoff.md](docs/04-stage4-handoff.md); plan: [docs/04-stage4-tool-calling-agent-plan.md](docs/04-stage4-tool-calling-agent-plan.md).
+- Stage 5 claims risk model: **Done for the approved local synthetic prototype**. XGBoost and a separate inference API are deployed locally; metrics and limitations: [docs/eval/stage5-risk-model-report.md](docs/eval/stage5-risk-model-report.md). No real claims data, fraud determination, claim decision, production-readiness claim, or Stage 4 agent integration.
 - Stage 2 is **done**: the Phase 2.4 `top_k=20` hybrid generation follow-up passed live verification; Phases 2.5 and 2.6 are complete. Results: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
@@ -51,6 +52,8 @@ insurance claims investigation.
 ./scripts/kind-create.sh        # create cluster (podman provider)
 ./scripts/build-ai-api.sh       # build + kind load ai-api image
 ./scripts/build-claims-service.sh # build + kind load synthetic claims service
+./scripts/train-claims-risk-model.sh # evaluate synthetic labels; promote only on passing gates
+./scripts/build-claims-risk-service.sh # validate latest promotion; build + kind load inference service
 ./scripts/deploy-stage1.sh      # .env -> secret stage1-secrets, apply kustomize, wait rollouts
 QDRANT_SNAPSHOT_CONFIRMED=1 ./scripts/upgrade-qdrant.sh # staged 1.15 -> 1.19 upgrade after snapshot
 ./scripts/provision-rag-ingest-role.sh # create least-privilege rag_ingest role/schema ownership
@@ -64,6 +67,9 @@ QDRANT_SNAPSHOT_CONFIRMED=1 ./scripts/upgrade-qdrant.sh # staged 1.15 -> 1.19 up
 cd apps/frontend && npm ci && npm run test:coverage && npm run test:e2e
 python3 -m pytest -q tests/unit
 kubectl -n ai-platform logs deploy/otel-collector --tail=200   # traces
+kubectl --context kind-ai-stage1 -n ai-platform apply -f infrastructure/kubernetes/base/claims-risk-service.yaml
+kubectl --context kind-ai-stage1 -n ai-platform rollout restart deploy/claims-risk-service
+kubectl --context kind-ai-stage1 -n ai-platform rollout status deploy/claims-risk-service
 kubectl kustomize infrastructure/kubernetes/base >/dev/null    # validate manifests
 bash -n scripts/*.sh && python3 -m py_compile apps/ai-api/main.py apps/claims-service/main.py agents/claims/*.py
 ```

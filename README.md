@@ -9,6 +9,7 @@ Current progress:
 - Stage 2 document ingestion + RAG is complete. The Phase 2.4 top_k=20 generation follow-up passed its live hybrid verification on 2026-10-05.
 - Stage 3 Claims Copilot is complete. API/UI are deployed locally; automated checks and a live cited brief with collector trace pass.
 - Stage 4 bounded claims tool-calling workflow is done for the local synthetic learning scope; API and synthetic claims-service are deployed, live RAG evidence and collector spans were exercised, and unit/integration checks pass. The reviewed evaluation documents model-quality limitations and is not a production-readiness claim. See the [Stage 4 evaluation report](docs/eval/stage4-claims-agent-report.md) and [handoff](docs/04-stage4-handoff.md).
+- Stage 5 claims risk model is done for the approved local synthetic prototype. It is advisory, routes uncertain cases to handler triage, and is not a fraud or coverage decision or a production-readiness claim. See the [Stage 5 evaluation report](docs/eval/stage5-risk-model-report.md) and [plan](docs/05-stage5-claims-risk-model-plan.md).
 - See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md), and [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md).
 
 ## Stack
@@ -229,6 +230,27 @@ An initial live request returned HTTP 502 because Groq rejected constrained JSON
 one-shot HOME-002 request returned a cited brief and its trace correlated with the collector. The smoke script makes one provider-backed request and does not automatically retry. Stage 2's
 Phase 2.4 `top_k=20` follow-up has since passed live verification; see the Stage 2 execution record.
 
+
+## Stage 5 Claims Risk Model
+
+Stage 5 is complete for a synthetic local prototype only. The model estimates whether a synthetic
+case should receive human review; it does not detect fraud, decide coverage, or automate claims.
+Incomplete or near-threshold assessments are returned for handler triage. Never use real customer or
+claim data.
+
+Train/evaluate and promote only if the synthetic holdout gates pass, then build/load the inference
+image and apply its internal service manifest:
+
+```bash
+./scripts/train-claims-risk-model.sh
+./scripts/build-claims-risk-service.sh
+kubectl --context kind-ai-stage1 apply -f infrastructure/kubernetes/base/claims-risk-service.yaml
+kubectl --context kind-ai-stage1 -n ai-platform rollout restart deploy/claims-risk-service
+kubectl --context kind-ai-stage1 -n ai-platform rollout status deploy/claims-risk-service
+```
+
+Metrics, provenance, and limitations: [Stage 5 evaluation report](docs/eval/stage5-risk-model-report.md).
+Stage 4 agent integration remains Stage 6.
 
 ## Current status
 
