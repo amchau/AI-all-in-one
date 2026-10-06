@@ -11,7 +11,7 @@ a measured problem, recorded in an ADR.
 | 1 | Platform foundation on Kubernetes | AI Factory | Done | [01](01-stage1-foundation.md) |
 | 2 | Document ingestion + RAG | Knowledge Intelligence | Done (2.4 top_k=20 live hybrid verification passed; 2.5 and 2.6 complete) | [02](02-stage2-rag-plan.md) |
 | 3 | Claims Copilot (UI, structured investigation output) | Human-in-the-loop | Done (API/UI deployed; live brief and trace verified) | [03](03-stage3-claims-copilot-plan.md) |
-| 4 | Claims tool-calling workflow (synthetic read-only Claims/Policy/Customer/Payments/Fraud APIs) | Bounded tool orchestration | Implementation complete; model-quality review pending | [04](04-stage4-tool-calling-agent-plan.md), [handoff](04-stage4-handoff.md), [eval](eval/stage4-claims-agent-report.md) |
+| 4 | Claims tool-calling workflow (synthetic read-only Claims/Policy/Customer/Payments/Fraud APIs) | Bounded tool orchestration | Done (local synthetic scope reviewed and accepted; limitations documented) | [04](04-stage4-tool-calling-agent-plan.md), [handoff](04-stage4-handoff.md), [eval](eval/stage4-claims-agent-report.md) |
 | 5 | Claims risk model (XGBoost/LightGBM) | Decision Intelligence | - | - |
 | 6 | Agent + ML + RAG orchestration | Hybrid AI | - | - |
 | 7 | Human approval workflow (Temporal) | Governed autonomy | - | - |

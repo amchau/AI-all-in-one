@@ -1,6 +1,6 @@
 # Stage 4 - Claims Tool-Calling Workflow
 
-Status: **APPROVED / LOCAL INTEGRATION DEPLOYED; EVALUATION IN PROGRESS**
+Status: **APPROVED / DONE FOR LOCAL SYNTHETIC LEARNING SCOPE**
 Pattern: Bounded tool orchestration
 Builds on: Stage 2 RAG and Stage 3 Claims Copilot
 
@@ -99,4 +99,4 @@ git diff --check
 - Stage 4 verification (2026-10-06): `263 passed, 2 skipped` across unit and integration tests; the claims package reports 85% coverage under the focused test set. Python compile, shell syntax, Kustomize render, and `git diff --check` pass. The hardened `claims-service` image (`localhost/claims-service:stage4.0`) and API are both 1/1 ready in `ai-stage1`; Kustomize includes the service.
 - Stage 4 live smoke (2026-10-05): one bounded provider-backed request returned `answered` using the `claim` and `fraud_signal` sources, 2 tool calls, valid source references, and trace `6f35cdc40fb690886799ed6791a26b15`; collector inspection confirmed API, agent, model, and tool spans and no raw narrative in the collected trace. A separate broad request safely stopped at the four-turn bound before final output; see [the evaluation report](eval/stage4-claims-agent-report.md). No automatic retries were used.
 - Evaluation reports exact-source checks and zero prohibited tool dispatch in the deterministic suite. Semantic entailment, broad scenario quality, live RAG evidence selection, and real-data security remain unmeasured; Stage 4 remains in progress pending broader evaluation and review.
-- 2026-10-06 addendum (supersedes the dated Stage 4 verification/evaluation bullets above): 263 unit/integration tests pass, 2 skip, and focused claims coverage is 85%. Live RAG evidence was exercised; one pipe-repair finding exactly matched its cited synthetic policy sentence. Latest trace `e188a3b16bad10581ec8711bf33607f1` has 2 tool calls, 6 sources, and agent/model/tool/RAG spans without an agent exception. Multi-case provider-backed model quality and human labels remain pending; see [the current evaluation report](eval/stage4-claims-agent-report.md).
+- 2026-10-06 addendum (supersedes the dated Stage 4 verification/evaluation bullets above): 263 unit/integration tests pass, 2 skip, and focused claims coverage is 85%. Live RAG evidence was exercised; one pipe-repair finding exactly matched its cited synthetic policy sentence. Latest trace `e188a3b16bad10581ec8711bf33607f1` has 2 tool calls, 6 sources, and agent/model/tool/RAG spans without an agent exception. The user reviewed and accepted the fixed scenario results. Stage 4 is Done for the local synthetic scope; the saved all-domains case omitted payment/fraud sources, and the small sample is not evidence of production readiness. See [the current evaluation report](eval/stage4-claims-agent-report.md).

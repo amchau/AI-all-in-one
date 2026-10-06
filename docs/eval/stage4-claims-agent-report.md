@@ -1,7 +1,7 @@
 # Stage 4 Claims Agent: Evaluation and Deployment Report
 
 Date: 2026-10-06  
-Status: implementation and local integration verified; Stage 4 evaluation remains in progress.
+Status: Stage 4 complete for the local synthetic learning scope; not production readiness.
 
 ## Scope and method
 
@@ -28,6 +28,7 @@ used.
 | Successful provider-backed claims smoke | 1 request, 2 tool calls, 1,729 ms | Returned `answered`, claim and fraud-signal sources, and source references present in the response. One sample is not a reliability or latency distribution. |
 | Successful provider-backed RAG smoke | 1 exact-evidence response; 2 tool calls; 6,974 ms | Returned five policy-evidence sources. The pipe-repair finding exactly matched the cited synthetic policy sentence; all references resolved. Response trace ID: `a39a56ae75a120ed83fb579c7ce2d1f3`. |
 | Latest final-function live trace | 2 tool calls, 6 sources | Trace `e188a3b16bad10581ec8711bf33607f1` has agent/model/tool spans plus RAG source-resolution, embed, sparse-embed, search, rerank, and generation spans; no agent exception was recorded. |
+| User-reviewed scenario set | Accepted 2026-10-06 | User reports the four fixed provider-backed scenarios were reviewed and the results looked good. The saved `all_domains` response is `answered` (3 tool calls, 3 findings, 1,434 ms) with claim, policy, and customer sources; payment and fraud sources were not returned for that request. Record this as incomplete domain coverage, not as 5/5 tool selection. |
 | Observed live failures | Several bounded failures during iteration | Earlier probes exposed model tool-order violations, Groq JSON/function-call incompatibility, and premature free-form output. These were addressed with claim-first tool exposure, forced final-answer function calling, and validated early structured output. No automatic retries were used. |
 | Trace and narrative handling | Correlated and checked | Successful response trace `6f35cdc40fb690886799ed6791a26b15` includes API, agent, model, and tool spans. Collector inspection did not find the request narrative in trace output. |
 | Deployment | API 1/1; claims-service 1/1 ready | `localhost/ai-api:stage4.0` and `localhost/claims-service:stage4.0` are running in `ai-stage1`; service resource renders through Kustomize. |
@@ -60,7 +61,8 @@ git diff --check
 - Deployment is a local unauthenticated synthetic-data setup, not a production security review. No
   real-data readiness, business decision authority, or semantic faithfulness is claimed.
 
-Stage 4 implementation and local deployment acceptance checks pass. Keep the roadmap status in
-progress until a reviewer evaluates a fixed, multi-case provider-backed scenario set for expected
-tool selection, required-fact coverage, unsupported assertions, and prohibited-action attempts. Do
-not claim production readiness or general semantic faithfulness from this learning-stage evaluation.
+The user reviewed and accepted the fixed scenario results on 2026-10-06. Stage 4 is complete for its
+approved local synthetic learning scope. The saved all-domains response did not include payment or
+fraud sources despite that request; keep this as a known limitation for future work. The small sample
+does not establish broad tool-selection reliability, general semantic faithfulness, or production
+readiness.

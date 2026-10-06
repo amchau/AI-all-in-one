@@ -1,7 +1,7 @@
 # Stage 4 handoff: claims tool-calling workflow
 
 Updated: 2026-10-06  
-Status: **implementation and local integration complete; model-quality review remains in progress**
+Status: **Done for the reviewed local synthetic learning scope; not production-ready**
 
 This is a session handoff, not a change in the approved Stage 4 scope. The canonical implementation
 plan is [04-stage4-tool-calling-agent-plan.md](04-stage4-tool-calling-agent-plan.md); measured
@@ -45,13 +45,11 @@ model, tool, and RAG spans without an agent exception.
 
 Full metrics, test commands, and evaluation limitations are recorded in the [evaluation report](eval/stage4-claims-agent-report.md).
 
-## Remaining closeout
+## Closeout
 
-1. Have a reviewer assess the fixed provider-backed scenarios for tool choice, required-fact coverage,
-   unsupported assertions, and uncertainty. The implementation, deterministic safety scenarios, live
-   RAG path, trace checks, and deployment gates are complete.
-2. Keep Stage 4 in progress until that review accepts the documented model-quality limitations. Do
-   not claim production readiness or broad semantic faithfulness from the current small sample.
+The user reviewed and accepted the fixed provider-backed scenario results on 2026-10-06. The saved
+`all_domains` case returned claim, policy, and customer sources but not payment or fraud sources;
+this gap is documented in the evaluation report and remains a limitation, not a production claim.
 
 ## Useful checks
 

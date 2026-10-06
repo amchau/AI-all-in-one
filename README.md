@@ -8,7 +8,7 @@ Current progress:
 - Stage 1 platform foundation is complete.
 - Stage 2 document ingestion + RAG is complete. The Phase 2.4 top_k=20 generation follow-up passed its live hybrid verification on 2026-10-05.
 - Stage 3 Claims Copilot is complete. API/UI are deployed locally; automated checks and a live cited brief with collector trace pass.
-- Stage 4 bounded claims tool-calling implementation and local integration are complete; API and synthetic claims-service are deployed, live RAG evidence and collector spans were exercised, and unit/integration checks pass. Multi-case model-quality review remains before marking the stage done. See the [Stage 4 evaluation report](docs/eval/stage4-claims-agent-report.md) and [handoff](docs/04-stage4-handoff.md).
+- Stage 4 bounded claims tool-calling workflow is done for the local synthetic learning scope; API and synthetic claims-service are deployed, live RAG evidence and collector spans were exercised, and unit/integration checks pass. The reviewed evaluation documents model-quality limitations and is not a production-readiness claim. See the [Stage 4 evaluation report](docs/eval/stage4-claims-agent-report.md) and [handoff](docs/04-stage4-handoff.md).
 - See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md), and [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md).
 
 ## Stack
@@ -235,5 +235,6 @@ Phase 2.4 `top_k=20` follow-up has since passed live verification; see the Stage
 - Stage 1: done (smoke test passing with Groq `gpt-oss-20b`)
 - Stage 2: done - bounded `top_k=20` hybrid generation passed the documented live exit check; see [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md)
 - Stage 3: done - API/UI deployed; unit/browser checks pass; live cited brief and collector trace verified
+- Stage 4: done for the reviewed local synthetic learning scope; see [the evaluation report](docs/eval/stage4-claims-agent-report.md) for limitations, including incomplete payment/fraud source coverage in the saved all-domains case
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).
