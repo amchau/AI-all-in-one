@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -25,7 +25,7 @@ Stage 4 needs a controlled tool-calling workflow for synthetic claims investigat
 
 Recommend plain Python with a bounded, explicit tool-selection/execution loop using LiteLLM tool/function calling. Keep the allowlist, schemas, iteration limits, and failure behavior visible in repository code. Do not add a framework dependency for the initial workflow.
 
-Status remains Proposed until the user accepts this architectural decision.
+Accepted by the user with approval of the Stage 4 plan and ADRs.
 
 ## Validation
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -25,7 +25,7 @@ Stage 4 needs a small set of synthetic business tools for a local Kubernetes cla
 
 Recommend one modular internal REST service with separate typed endpoints for Claims, Policy, Customer, Payments, and Fraud, called through a small Python tool adapter. Expose only fixed LiteLLM tool/function definitions. Validate tool names and arguments before dispatch; disallow arbitrary URLs, SQL, generic execution, and mutations. Defer a standalone MCP server.
 
-Status remains Proposed until the user accepts this architectural decision.
+Accepted by the user with approval of the Stage 4 plan and ADRs.
 
 ## Validation
 

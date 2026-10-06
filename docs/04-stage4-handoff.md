@@ -1,7 +1,7 @@
 # Stage 4 handoff: claims tool-calling workflow
 
-Updated: 2026-10-05  
-Status: **local integration deployed; evaluation and review remain in progress**
+Updated: 2026-10-06  
+Status: **implementation and local integration complete; model-quality review remains in progress**
 
 This is a session handoff, not a change in the approved Stage 4 scope. The canonical implementation
 plan is [04-stage4-tool-calling-agent-plan.md](04-stage4-tool-calling-agent-plan.md); measured
@@ -22,8 +22,8 @@ prohibited tool rejection, invalid source rejection, bounds, and sanitized depen
 - Built and loaded `localhost/claims-service:stage4.0`, registered its hardened internal Deployment
 and ClusterIP Service in Kustomize, and deployed it in `ai-platform`. At the last verification,
 `ai-api` and `claims-service` were both 1/1 ready in cluster `ai-stage1`.
-- Ran the unit and integration suites: **252 passed, 2 skipped**. The focused claims test set reports
-**80% coverage**. Python compilation, shell syntax, Kustomize rendering, and `git diff --check`
+- Ran the unit and integration suites: **263 passed, 2 skipped**. The focused claims test set reports
+**85% coverage**. Python compilation, shell syntax, Kustomize rendering, and `git diff --check`
 passed.
 - Sent one bounded provider-backed request without automatic retries. It returned an answered brief
 using claim and fraud-signal sources, with two tool calls and resolvable source references. Trace
@@ -35,35 +35,23 @@ answer-quality scenario.
 - The deterministic suite rejected all four prohibited tool names before any business-service call
 and rejected one fabricated source ID. These results verify safety behavior under scripted model
 responses; they do not measure how often a real model will make unsafe requests.
+- Added a second synthetic claim/policy/customer fixture and response identity checks. `get_claim` is
+the only initial tool; linked tools appear only after its response is validated. The final turn uses
+a forced `submit_final_answer` function; valid structured output returned earlier is still locally
+validated and accepted.
+- Exercised live RAG policy evidence. One finding exactly matched its cited synthetic policy sentence.
+The latest trace `e188a3b16bad10581ec8711bf33607f1` recorded 2 tool calls, 6 sources, and agent,
+model, tool, and RAG spans without an agent exception.
 
 Full metrics, test commands, and evaluation limitations are recorded in the [evaluation report](eval/stage4-claims-agent-report.md).
 
-## Next steps, in order
+## Remaining closeout
 
-1. **Inspect the current worktree and local cluster.** Start with `git status --short`, review this
-   handoff and the Stage 4 plan, then check `kubectl --context kind-ai-stage1 -n ai-platform get
-deploy ai-api claims-service` and rollout status before assuming the local cluster is still present.
-2. **Address the observed turn-budget failure without relaxing the approved bounds.** Review the
-   system prompt and loop behavior so the model is more likely to finish after its tool calls while
-   retaining the maximum of four model turns and six tool calls. Add deterministic tests for the
-   turn sequence and failure contract. Do not increase the configured bounds without user approval
-   and evidence that the change is needed.
-3. **Broaden fixed synthetic scenarios.** Add multiple claim fixtures and test answerable,
-   insufficient-evidence, missing/conflicting records, tool/dependency failures, malformed outputs,
-   oversized responses, and adversarial instructions in both narratives and tool-returned text.
-   Keep all mutation and prohibited-action cases fail-closed.
-4. **Exercise optional RAG policy evidence once through a controlled integration scenario.** Verify
-   the claim-to-policy binding, loss-date inputs, source IDs/citations, bounded returned evidence,
-   and trace spans. Use synthetic data and no automatic retries.
-5. **Measure model behavior separately from orchestration tests.** With a documented fixed scenario
-   set, report model tool-selection accuracy, required-fact coverage, unsupported assertion rate,
-   prohibited-action attempts and dispatches, failure handling, latency, and dependency failures.
-   Use semantic review or human labels for entailment; source-ID validity alone is insufficient.
-6. **Re-run acceptance checks and update artifacts.** Run unit/integration and focused coverage tests,
-   compile/shell/Kustomize/diff checks, verify deployments, then perform only the planned controlled
-   provider-backed smoke and trace correlation. Update the evaluation report and plan with actual
-   results; keep Stage 4 in progress until the plan's acceptance criteria and limitations are
-   explicitly reviewed.
+1. Have a reviewer assess the fixed provider-backed scenarios for tool choice, required-fact coverage,
+   unsupported assertions, and uncertainty. The implementation, deterministic safety scenarios, live
+   RAG path, trace checks, and deployment gates are complete.
+2. Keep Stage 4 in progress until that review accepts the documented model-quality limitations. Do
+   not claim production readiness or broad semantic faithfulness from the current small sample.
 
 ## Useful checks
 

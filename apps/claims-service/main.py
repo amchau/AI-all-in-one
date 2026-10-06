@@ -60,7 +60,15 @@ _CLAIMS = {
         loss_date=date(2025, 3, 1),
         reported_event="Water entered the ground floor after a reported pipe failure.",
         status="under_review",
-    )
+    ),
+    "CL-124": ClaimRecord(
+        claim_id="CL-124",
+        policy_id="COMM-001",
+        customer_id="CUST-124",
+        loss_date=date(2025, 4, 12),
+        reported_event="A delivery vehicle was damaged in a loading-bay collision.",
+        status="open",
+    ),
 }
 _POLICIES = {
     "HOME-002": PolicyRecord(
@@ -69,14 +77,26 @@ _POLICIES = {
         status="active",
         effective_date=date(2024, 1, 1),
         declared_limit="GBP 250000",
-    )
+    ),
+    "COMM-001": PolicyRecord(
+        policy_id="COMM-001",
+        product="commercial",
+        status="active",
+        effective_date=date(2024, 6, 1),
+        declared_limit="GBP 500000",
+    ),
 }
 _CUSTOMERS = {
     "CUST-123": CustomerRecord(
         customer_id="CUST-123",
         display_name="Synthetic Customer 123",
         contact_status="verified",
-    )
+    ),
+    "CUST-124": CustomerRecord(
+        customer_id="CUST-124",
+        display_name="Synthetic Customer 124",
+        contact_status="unverified",
+    ),
 }
 _PAYMENTS = {
     "CL-123": [
@@ -98,7 +118,16 @@ _FRAUD_SIGNALS = {
             description="Reported incident date differs from the first submitted document date.",
             status="unreviewed",
         )
-    ]
+    ],
+    "CL-124": [
+        FraudSignal(
+            signal_id="FRD-002",
+            claim_id="CL-124",
+            signal_type="none",
+            description="No review signal is recorded for this synthetic claim.",
+            status="reviewed",
+        )
+    ],
 }
 
 

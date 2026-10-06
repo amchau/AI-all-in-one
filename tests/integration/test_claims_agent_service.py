@@ -104,6 +104,45 @@ def test_claims_agent_consumes_typed_claims_service_records() -> None:
     assert result.findings[0].source_ids == ["fraud_signal:FRD-001"]
 
 
+def test_claims_agent_handles_second_independent_claim_fixture() -> None:
+    model_turn = 0
+
+    def route(request: httpx.Request) -> httpx.Response:
+        nonlocal model_turn
+        if request.url.host == "litellm":
+            model_turn += 1
+            if model_turn == 1:
+                return model_tool_call("get_claim", {"claim_id": "CL-124"})
+            if model_turn == 2:
+                return model_tool_call("get_policy", {"policy_id": "COMM-001"})
+            return _model_final("policy:COMM-001")
+        service_response = SERVICE_CLIENT.request(request.method, request.url.path)
+        return httpx.Response(service_response.status_code, json=service_response.json())
+
+    with httpx.Client(transport=httpx.MockTransport(route)) as client:
+        agent = ClaimsAgent(
+            http_client=client,
+            claims_service_url="http://claims-service:8080",
+            litellm_url="http://litellm:4000",
+            litellm_master_key="test-key",
+            model="test-model",
+        )
+        result = agent.investigate(
+            AgentInvestigationInput(
+                claim_id="CL-124",
+                narrative="A synthetic commercial vehicle collision was reported.",
+            )
+        )
+
+    assert result.claim_id == "CL-124"
+    assert result.tool_calls == 2
+    assert {source.source_id for source in result.sources} == {
+        "claim:CL-124",
+        "policy:COMM-001",
+    }
+    assert result.sources[0].facts["reported_event"].startswith("A delivery vehicle")
+
+
 def _model_final(source_id: str) -> httpx.Response:
     return httpx.Response(
         200,
