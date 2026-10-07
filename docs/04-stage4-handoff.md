@@ -35,10 +35,13 @@ answer-quality scenario.
 - The deterministic suite rejected all four prohibited tool names before any business-service call
 and rejected one fabricated source ID. These results verify safety behavior under scripted model
 responses; they do not measure how often a real model will make unsafe requests.
-- Added a second synthetic claim/policy/customer fixture and response identity checks. `get_claim` is
 the only initial tool; linked tools appear only after its response is validated. The final turn uses
 a forced `submit_final_answer` function; valid structured output returned earlier is still locally
-validated and accepted.
+- Added a second synthetic claim/policy/customer fixture and response identity checks. `get_claim` is
+	the only initial tool; linked tools appear only after its response is validated. The final turn
+	requests a JSON object with no tools; the response is locally parsed, schema-validated, and checked
+	against returned source IDs. Valid structured output returned earlier is still locally validated
+	and accepted.
 - Exercised live RAG policy evidence. One finding exactly matched its cited synthetic policy sentence.
 The latest trace `e188a3b16bad10581ec8711bf33607f1` recorded 2 tool calls, 6 sources, and agent,
 model, tool, and RAG spans without an agent exception.

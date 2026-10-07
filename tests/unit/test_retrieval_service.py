@@ -476,11 +476,43 @@ def test_query_emits_expected_trace_spans_and_bounded_attributes(
     query_tracer = provider.get_tracer("rag.retrieval.service.test")
     monkeypatch.setattr("rag.retrieval.service.tracer", query_tracer)
 
+    endorsement = replace(
+        document(),
+        doc_id="END-HOME-002-WATER-LIMIT-02",
+        doc_type="endorsement",
+    )
+    qdrant = FakeQdrant(
+        [
+            SimpleNamespace(
+                id="policy-chunk",
+                score=0.8,
+                payload={
+                    "doc_id": "POL-HOME-002-v2",
+                    "section": "3",
+                    "clause": None,
+                    "page": 3,
+                    "text": "Policy text without sensitive data.",
+                },
+            ),
+            SimpleNamespace(
+                id="endorsement-chunk",
+                score=0.7,
+                payload={
+                    "doc_id": endorsement.doc_id,
+                    "section": "1",
+                    "clause": None,
+                    "page": 1,
+                    "text": "Endorsement text without sensitive data.",
+                },
+            ),
+        ]
+    )
+
     service = RagQueryService(
-        source_repository=FakeRepository([document()]),
+        source_repository=FakeRepository([document(), endorsement]),
         embedder=FakeEmbedder(),
         sparse_embedder=FakeSparseEmbedder(),
-        qdrant_client=FakeQdrant(),
+        qdrant_client=qdrant,
         reranker=FakeReranker(),
         answer_generator=FakeGenerator(),
     )
@@ -489,7 +521,7 @@ def test_query_emits_expected_trace_spans_and_bounded_attributes(
         policy_id="HOME-002",
         loss_date=date(2025, 3, 1),
         mode=mode,
-        top_k=5,
+        top_k=1,
     )
 
     with query_tracer.start_as_current_span("rag.query") as query_span:
@@ -517,13 +549,24 @@ def test_query_emits_expected_trace_spans_and_bounded_attributes(
     assert spans["rag.embed"].attributes["rag.embedding_model"] == "embed-small"
     assert spans["rag.embed"].attributes["rag.embedding_dimensions"] == 1536
     assert spans["rag.search"].attributes["rag.mode"] == mode
-    assert spans["rag.search"].attributes["rag.top_k"] == 5
+    assert spans["rag.search"].attributes["rag.top_k"] == 1
     assert spans["rag.generate"].attributes["rag.model"] == "gpt-oss-20b"
     assert spans["rag.generate"].attributes["rag.citation_count"] == 1
     if "rag.sparse_embed" in mode_specific_spans:
         assert spans["rag.sparse_embed"].attributes["rag.sparse_model"] == "Qdrant/bm25"
     if "rag.rerank" in mode_specific_spans:
         assert spans["rag.rerank"].attributes["rag.reranker_model"] == "BAAI/bge-reranker-base"
+        assert list(spans["rag.search"].attributes["rag.candidate_doc_ids"]) == [
+            "POL-HOME-002-v2",
+            "END-HOME-002-WATER-LIMIT-02",
+        ]
+        assert list(spans["rag.rerank"].attributes["rag.reranked_doc_ids"]) == [
+            "END-HOME-002-WATER-LIMIT-02",
+            "POL-HOME-002-v2",
+        ]
+        assert list(spans["rag.rerank"].attributes["rag.returned_doc_ids"]) == [
+            "END-HOME-002-WATER-LIMIT-02"
+        ]
 
     for span in spans.values():
         assert "Is flood damage covered?" not in repr(span.attributes)

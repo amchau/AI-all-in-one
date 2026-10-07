@@ -106,7 +106,7 @@ sequenceDiagram
     LLM-->>Agent: Final answer or proposed function call
     Note over Agent,LLM: Model proposes tool calls. The agent calls services.
     alt Final bounded turn
-      Note over Agent,LLM: Only submit_final_answer is available and required.
+      Note over Agent,LLM: Final turn uses JSON-object mode with no tools; API validates schema and sources.
       Agent->>Agent: Validate final output and resolve source IDs
     else Tool-selection turn
       alt Synthetic domain lookup selected
@@ -269,3 +269,38 @@ Stage 5's existing label rubric and model remain unchanged.
   No `rag.generate` span is expected in retrieval-only mode. Full trace record: [Stage 6 evaluation
   report](eval/stage6-hybrid-ai-report.md). This does not establish model quality or production
   readiness.
+- Follow-up regression (2026-10-07): fixed pipe-failure API test covers propagation of water
+  clarification and flood-extension source identities, a cited water-clarification summary, and
+  unresolved schedule/cause/duration questions. The agent prompt explicitly guards against
+  schedule-applicability and missing-expiry inference. Claims-agent/API tests: 36 passed; Python
+  3.12 backend unit/integration suite: 315 passed, 2 skipped. The route test mocks retrieval, so
+  live ranking recall and model adherence remain unverified; Stage 6 answer-quality acceptance stays
+  open.
+- Ranked-document diagnostic (2026-10-07): trace `dd6a3694ea907d170e60b9c592dfaf30` confirmed
+  both endorsements entered the 20 hybrid candidates but ranked below the returned top five after
+  TEI reranking. The updated API image rolled out; the single approved follow-up request then failed
+  during agent execution with LiteLLM HTTP 400 (HTTP 502 from the API), without retry. See the
+  [Stage 6 evaluation report](eval/stage6-hybrid-ai-report.md) for ranks and limitations. Next:
+  choose a bounded Stage 6 evidence-selection policy, test it, then seek approval for another smoke.
+- `top_k=8` answer review and guard (2026-10-07): correlated trace
+  `b97fe7dbe3fbf9fb59b17bf6281bf851` confirmed water-endorsement retrieval and available risk, but
+  the answer asserted unsupported repair-cost schedule content and coverage. The guard now detects
+  those patterns and abstains while adding required questions. Claims-agent/API tests: 39 passed;
+  full backend: 318 passed, 2 skipped. The latest stricter detector was built and rolled out after
+  the initial smoke. A subsequent authorized pipe-failure smoke matched response and collector
+  trace `191bd56770048eb4933bd5520b25060f` and returned `insufficient_evidence` with required
+  uncertainty questions, empty summary/findings, and available risk. A later flood retrieval probe
+  ranked the flood extension 1st/2nd and returned it in top eight (trace
+  `93d95eacf204ae853dc11b50bbefd5ff`) but failed with HTTP 502 during agent execution; Groq
+  returned `tool_use_failed` for malformed final tool arguments on turn 3, and the narrative
+  conflicted with the fixture. Added local combined-route regression for flood-extension
+  applicability without schedule evidence. Claims API tests: 41; full backend: 320 passed, 2
+  skipped. Retrieval and local guard are verified; coherent live flood answer remains open. See the
+  [Stage 6 report](eval/stage6-hybrid-ai-report.md).
+- Final response transport fix (2026-10-07): Groq rejected a truncated `submit_final_answer` call
+  as malformed tool JSON. The final agent turn now requests `response_format: {"type":"json_object"}`
+  with no tools and locally validates the same `AgentFinalPayload` and source IDs. Claims/API tests
+  passed (41); full backend passed (320 passed, 2 skipped). One live check no longer hit the Groq
+  tool parser, but final turn 4 exceeded the 30-second read timeout. The final JSON request now has
+  a 60-second bound; intermediate requests remain 30 seconds and do not retry. The timeout follow-up
+  is deployed locally pending a separately approved live check.

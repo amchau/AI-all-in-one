@@ -100,6 +100,49 @@ desktop/mobile tests passed**. Route tests cover retrieval-before-agent, source 
 partial agent responses on retrieval failure. Python compilation, shell syntax, Kustomize render, and
 `git diff --check` passed.
 
+## Pipe-Failure Regression Follow-Up (2026-10-07)
+
+The combined API regression now uses the fixed narrative "A domestic pipe failed overnight and water damaged the home; duration is unknown." Its mocked retrieval returns the HOME-002 water clarification and flood extension. The test asserts both document identities are passed to the agent, the summary cites the water clarification source, and schedule applicability plus cause/duration remain unresolved. The claims-agent system prompt now explicitly prohibits inferring schedule-dependent endorsement applicability and policy-in-force from an effective date without expiry evidence.
+
+The prompt-contract and combined API unit slices passed (36 tests); the full Python 3.12 backend unit/integration suite passed (315 passed, 2 skipped). These are prompt/orchestration contract checks, not a test of actual retrieval ranking or model adherence. At the time of that follow-up, no provider-backed smoke had run. Retrieval coverage, live answer completeness, and Stage 6 answer-quality acceptance therefore remained open.
+
+## Ranked-Document Diagnostic (2026-10-07)
+
+Added bounded ordered document-ID attributes to `rag.search` (`rag.candidate_doc_ids`) and `rag.rerank` (`rag.reranked_doc_ids`, `rag.returned_doc_ids`). They contain corpus IDs only, never query text, chunk text, or claim data. The focused retrieval suite passed (32 tests); full Python 3.12 backend unit/integration passed (315 passed, 2 skipped). API image `localhost/ai-api:stage6.0` was rebuilt, loaded, and rolled out successfully.
+
+One approved request used claim `CL-123`, narrative "A domestic pipe failed overnight and water damaged the home; duration is unknown.", and guidance date `2026-01-01`. Trace `dd6a3694ea907d170e60b9c592dfaf30` showed 20 hybrid candidates and 20 reranked chunks. Both expected endorsements entered the candidate set: water-clarification chunks appeared at candidate ranks 3, 7, 11, and 13; flood-extension chunks at 8 and 17. After reranking, water chunks ranked 7, 8, 10, and 14; flood chunks ranked 12 and 19. The returned top five were the base policy, three water-procedure chunks, and the regulation. The observed omission is therefore rerank ordering plus the combined route's `top_k=5` cutoff, not source eligibility or absent indexed chunks.
+
+This request returned HTTP 502 because LiteLLM rejected the agent chat-completion request with HTTP 400 on model turn 4. No retry was made. It diagnoses retrieval ranking only; it does not verify a completed answer or whether the updated prompt rules are followed. Stage 6 answer-quality acceptance remains open. The next implementation decision is a bounded Stage 6 evidence-selection policy that preserves relevant endorsement chunks while respecting the agent's maximum of eight initial sources, followed by a regression and a separately approved smoke.
+
+## `top_k=8` Pipe-Failure Answer Review (2026-10-07)
+
+The user-reported synthetic request returned HTTP 200 with `policy_evidence_status=retrieved`, eight policy chunks including two from `END-HOME-002-WATER-LIMIT-02`, summary citations to base-policy section 3 and water-endorsement section 3, three tool calls, and an available risk advisory. This supports the bounded retrieval change for the water-clarification source in this scenario. The flood extension was not in the returned sources.
+
+The reported summary nevertheless asserted the repair-cost schedule content and that the loss is covered under the escape-of-water clause. The synthetic policy record has `status=active` and an effective date, but no expiry date or schedule data. The endorsement applicability is conditional on schedule listing. Although the answer asked schedule, expiry, and cause/duration questions, its unsupported affirmative assertions remain an answer-quality failure despite valid source IDs.
+
+The response trace ID is `b97fe7dbe3fbf9fb59b17bf6281bf851`, and the collector trace matches. It shows `top_k=8`, 32 hybrid candidates, both endorsements among candidates, two water-endorsement chunks in the returned eight, 11 total agent sources, three tool calls, successful agent spans, and available risk advisory.
+
+A deterministic Stage 6 output guard was expanded after this response. It requires unresolved questions for absent schedule, expiry, and cause/duration evidence, and converts detected unsupported policy-period, schedule, coverage, and endorsement assertions into an `insufficient_evidence` result with empty summary/findings. Three local regressions cover the exact unsupported claim forms; the full Python 3.12 backend suite passed (318 passed, 2 skipped). The stricter detector was built and rolled out locally.
+
+## Guarded Pipe-Failure Smoke (2026-10-07)
+
+One explicitly approved request to the updated deployment returned HTTP 200, `policy_evidence_status=retrieved`, and `investigation.status=insufficient_evidence`. The guard returned an empty summary and findings, and unresolved questions included schedule applicability, expiry/lapse, cause/duration, leak duration, and repair cost. Water-endorsement chunks remained in the returned policy evidence; risk status was available.
+
+Response trace `191bd56770048eb4933bd5520b25060f` matches the collector trace. Spans confirm retrieval-only hybrid reranking with `top_k=8`, 32 candidates, eight returned policy chunks, three agent tool calls, and the risk advisory. No retry or second request was made. This verifies the guard for this one synthetic pipe-failure response; flood-extension retrieval/applicability and broader answer quality remain open.
+
+## Flood-Extension Retrieval Probe (2026-10-07)
+
+One synthetic flood-focused request used `CL-123` with a surface-water-runoff narrative. Trace `93d95eacf204ae853dc11b50bbefd5ff` confirms `top_k=8`, 32 hybrid candidates, and the flood-extension document at reranked positions 1 and 2; both chunks were in the returned top eight. This confirms the retrieval path can surface the flood extension for this query.
+
+The API returned HTTP 502 during agent execution with `AgentDependencyError`; no investigation answer, citations, or risk result were returned. Gateway logs show Groq returned HTTP 400 `tool_use_failed` because the `submit_final_answer` arguments were malformed on model turn 3. No retry was made. The narrative also conflicts with the `CL-123` fixture's reported pipe failure, so this is a retrieval probe only, not an answer-quality or coverage evaluation.
+
+A route-level regression now supplies the retrieved flood extension to a fake agent that asserts it applies without schedule evidence; the Stage 6 guard returns `insufficient_evidence` and inserts the schedule question. Claims-agent/API tests passed (41), and the full Python 3.12 backend suite passed (320 passed, 2 skipped). A coherent flood fixture/live answer-level verification remains open and requires a stable agent dependency plus a separately approved smoke.
+
+## Final-Response Transport Fix (2026-10-07)
+
+The agent no longer forces Groq to serialize final output as a `submit_final_answer` tool call. The final turn supplies no tools and requests `response_format: {"type":"json_object"}`. The returned content is still parsed as `AgentFinalPayload`, then validated against the returned source IDs; malformed JSON or unexpected final tool calls fail closed. The focused claims/API suite passed (41 tests), and the full Python 3.12 backend suite passed (320 passed, 2 skipped).
+
+One authorized live check against this JSON mode returned HTTP 502 after final model turn 4 exceeded the existing 30-second read timeout. Earlier agent turns succeeded; the malformed tool-call rejection did not recur. The final JSON request now uses a bounded 60-second timeout, while intermediate turns remain at 30 seconds and automatic retries remain disabled. This timeout follow-up has been deployed locally but has not produced a successful provider-backed response.
 An initial redeployment attempt could not reach the kind API server at `10.129.24.10:443`; access
 later recovered. On 2026-10-07, the user reported a combined response with
 `policy_evidence_status=retrieved` and trace `0826761b079e1dfc1e0de72aadca0b8d`. Collector

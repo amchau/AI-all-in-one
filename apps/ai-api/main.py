@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 from threading import Lock
@@ -582,6 +583,7 @@ def execute_policy_evidence_retrieval(
     narrative: str,
     guidance_as_of: date | None = None,
     claim_context: SyntheticClaimContext | None = None,
+    top_k: int = 5,
 ) -> tuple[
     list[InvestigationSource],
     Literal["retrieved", "insufficient_evidence", "unavailable"],
@@ -614,7 +616,7 @@ def execute_policy_evidence_retrieval(
         policy_id=policy_id,
         loss_date=claim.loss_date,
         guidance_as_of=guidance_as_of or claim.loss_date,
-        top_k=5,
+        top_k=top_k,
         mode="hybrid_rerank",
     )
     try:
@@ -647,6 +649,127 @@ def execute_policy_evidence_retrieval(
     if not sources:
         return [], "insufficient_evidence", None
     return sources, "retrieved", None
+
+
+def enforce_hybrid_evidence_constraints(
+    investigation: AgentInvestigationOutput,
+) -> AgentInvestigationOutput:
+    """Fail closed on unsupported policy state and preserve missing-evidence questions."""
+    policy_sources = [
+        source for source in investigation.sources if source.source_type == "policy"
+    ]
+    has_expiry = any(
+        any(
+            value is not None
+            for key, value in source.facts.items()
+            if key.casefold() in {"expiry_date", "expiration_date", "end_date"}
+        )
+        for source in policy_sources
+    )
+    has_schedule = any(
+        "schedule" in key.casefold() and value not in (None, "", [], {})
+        for source in investigation.sources
+        for key, value in source.facts.items()
+    )
+    policy_evidence = [
+        source
+        for source in investigation.sources
+        if source.source_type == "policy_evidence"
+    ]
+    has_endorsement_evidence = any(
+        "endorsement" in source.label.casefold()
+        or str(source.facts.get("doc_id", "")).startswith("END-")
+        for source in policy_evidence
+    )
+    evidence_text = " ".join(
+        str(source.facts.get("text", "")) for source in policy_evidence
+    )
+
+    required_questions: list[str] = []
+    if has_endorsement_evidence and not has_schedule:
+        required_questions.append(
+            "Does the policy schedule list the applicable endorsement and limits?"
+        )
+    if policy_sources and not has_expiry:
+        required_questions.append(
+            "What expiry or lapse information confirms the policy was in force on the loss date?"
+        )
+    if "cause" in evidence_text.casefold() and "duration" in evidence_text.casefold():
+        required_questions.append(
+            "What evidence establishes the cause and duration of the reported water damage?"
+        )
+
+    answer_text = " ".join(
+        [investigation.summary, *(finding.text for finding in investigation.findings)]
+    )
+    unsupported_policy_period = not has_expiry and bool(
+        re.search(
+            r"\b(?:in force on|during the insured period|within the insured period|"
+            r"within the policy period|during the policy period)\b",
+            answer_text,
+            re.IGNORECASE,
+        )
+    )
+    unsupported_schedule_claim = has_endorsement_evidence and not has_schedule and (
+        re.search(
+            r"\bno evidence of\b.{0,60}\bschedule\b|"
+            r"\bno\b.{0,30}\bschedule limitations?\b|"
+            r"\bschedule\b.{0,50}\b(?:does not|doesn't|has not|hasn't) list\b",
+            answer_text,
+            re.IGNORECASE,
+        )
+        is not None
+        or any(
+            re.search(r"\b(?:endorsement|extension)\b", sentence, re.IGNORECASE)
+            is not None
+            and re.search(
+                r"\b(?:applies|applied|allows|provides|covers|is applicable|"
+                r"states?|says|clarifies)\b",
+                sentence,
+                re.IGNORECASE,
+            )
+            is not None
+            and re.search(
+                r"\b(?:only if|only when|unless)\b.{0,60}\bschedule\b",
+                sentence,
+                re.IGNORECASE,
+            )
+            is None
+            for sentence in re.split(r"[.!?]+", answer_text)
+        )
+    )
+    unsupported_coverage_claim = re.search(
+        r"\b(?:covered under|not covered under)\b|"
+        r"\b(?:claim|loss|damage|repairs?|repair costs?)\b.{0,80}"
+        r"\b(?:covered|not covered|insured|excluded)\b|"
+        r"\b(?:covered|not covered|insured|excluded)\b.{0,80}"
+        r"\b(?:claim|loss|damage|repairs?|repair costs?)\b",
+        answer_text,
+        re.IGNORECASE,
+    ) is not None
+
+    unresolved_questions = list(required_questions)
+    existing_questions = {question.casefold() for question in unresolved_questions}
+    for question in investigation.unresolved_questions:
+        if question.casefold() not in existing_questions:
+            unresolved_questions.append(question)
+            existing_questions.add(question.casefold())
+
+    update: dict[str, Any] = {
+        "unresolved_questions": unresolved_questions[:8],
+    }
+    if (
+        unsupported_policy_period
+        or unsupported_schedule_claim
+        or unsupported_coverage_claim
+    ):
+        update.update(
+            status="insufficient_evidence",
+            summary="",
+            summary_source_ids=[],
+            findings=[],
+        )
+    return investigation.model_copy(update=update)
 
 
 @app.post(
@@ -722,6 +845,7 @@ def investigate_claim_with_hybrid_ai(
                         narrative=request.narrative,
                         guidance_as_of=request.guidance_as_of,
                         claim_context=claim,
+                        top_k=8,
                     )
                 )
                 agent = ClaimsAgent(
@@ -735,6 +859,7 @@ def investigate_claim_with_hybrid_ai(
                     agent_request,
                     initial_sources=policy_sources,
                 )
+                investigation = enforce_hybrid_evidence_constraints(investigation)
                 risk_assessment = assess_claim_risk(
                     client,
                     claim_id=request.claim_id,

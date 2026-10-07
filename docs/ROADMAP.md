@@ -13,8 +13,8 @@ a measured problem, recorded in an ADR.
 | 3 | Claims Copilot (UI, structured investigation output) | Human-in-the-loop | Done (API/UI deployed; live brief and trace verified) | [03](03-stage3-claims-copilot-plan.md) |
 | 4 | Claims tool-calling workflow (synthetic read-only Claims/Policy/Customer/Payments/Fraud APIs) | Bounded tool orchestration | Done (local synthetic scope reviewed and accepted; limitations documented) | [04](04-stage4-tool-calling-agent-plan.md), [handoff](04-stage4-handoff.md), [eval](eval/stage4-claims-agent-report.md) |
 | 5 | Claims risk model (synthetic human-review referral) | Decision Intelligence | Done (local synthetic prototype; not production readiness) | [05](05-stage5-claims-risk-model-plan.md), [ADR-012](adr/ADR-012-stage5-risk-model.md), [eval](eval/stage5-risk-model-report.md) |
-| 6 | Agent + ML + RAG orchestration | Hybrid AI | In progress (implementation started 2026-10-06) | [06](06-stage6-hybrid-ai-plan.md), [ADR-013](adr/ADR-013-stage6-hybrid-orchestration.md) |
-| 7 | Human approval workflow (Temporal) | Governed autonomy | - | - |
+| 6 | Agent + ML + RAG orchestration | Hybrid AI | In progress (pipe-failure guard verified; flood answer and final JSON timeout still need live verification) | [06](06-stage6-hybrid-ai-plan.md), [handoff](06-stage6-handoff.md), [eval](eval/stage6-hybrid-ai-report.md), [ADR-013](adr/ADR-013-stage6-hybrid-orchestration.md) |
+| 7 | Human approval workflow | Governed autonomy | Draft plan prepared; awaiting user review, no implementation | [07 draft](07-stage7-human-approval-plan.md), [ADR-007 proposal](adr/ADR-007-workflow-engine-temporal.md) |
 | 8 | Specialist agents (policy, fraud, evidence) - measured vs single agent | Multi-agent | - | - |
 | 9 | AI observability / control tower (Prometheus, Grafana, Loki, Tempo) | AI Operations | - | - |
 | 10 | Production platform: GitOps (Argo CD), Terraform, Kyverno, Vault, multi-domain | Enterprise AI Factory | - | - |
@@ -43,7 +43,7 @@ docs/          stage docs, adr/, eval/, security.md, threat-model.md
 | 004 | Document model and chunking strategy | 2 | Accepted |
 | 005 | Claims agent implementation (plain Python vs framework) | 4 | Accepted |
 | 006 | Claims tool protocol (REST adapter vs MCP) | 4 | Accepted |
-| 007 | Workflow engine (Temporal) | 7 | - |
+| 007 | Workflow engine options (Temporal candidate) | 7 | Proposed; decision pending user review | [ADR-007](adr/ADR-007-workflow-engine-temporal.md) |
 | 008 | Observability stack expansion | 9 | - |
 | 009 | Dense RAG query contract | 2 | Accepted |
 | 010 | Hybrid retrieval and reranking contract | 2 | Accepted |

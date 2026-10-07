@@ -238,14 +238,23 @@ def test_hybrid_endpoint_retrieves_policy_evidence_before_agent(
         return SimpleNamespace(
             chunks=[
                 SimpleNamespace(
-                    chunk_id="chunk-1",
-                    doc_id="POL-HOME-002-v2",
-                    title="Home Policy",
-                    section="4",
-                    clause="4.2",
+                    chunk_id="water-clarification-1",
+                    doc_id="END-HOME-002-WATER-LIMIT-02",
+                    title="Home Water Damage Clarification Endorsement",
+                    section="1",
+                    clause=None,
                     page=3,
-                    text="Flood damage is covered subject to the stated limit.",
-                )
+                    text="Sudden accidental escape of water from a fixed installation remains covered.",
+                ),
+                SimpleNamespace(
+                    chunk_id="water-procedure-1",
+                    doc_id="PROC-HOME-WATER-EVIDENCE-01",
+                    title="Home Water Damage Evidence Procedure",
+                    section="3",
+                    clause=None,
+                    page=2,
+                    text="Establish the cause and likely duration from inspection evidence.",
+                ),
             ]
         )
 
@@ -271,14 +280,41 @@ def test_hybrid_endpoint_retrieves_policy_evidence_before_agent(
         def investigate(self, request, *, initial_sources):
             observed["agent_sources"] = initial_sources
             source = initial_sources[0] if initial_sources else None
+            claim_source = main.InvestigationSource(
+                source_id="claim:CL-123",
+                source_type="claim",
+                record_id="CL-123",
+                label="Synthetic claim record CL-123",
+                facts={"reported_event": "Water entered after a reported pipe failure."},
+            )
+            policy_source = main.InvestigationSource(
+                source_id="policy:HOME-002",
+                source_type="policy",
+                record_id="HOME-002",
+                label="Synthetic policy record HOME-002",
+                facts={
+                    "status": "active",
+                    "effective_date": "2024-01-01",
+                    "declared_limit": "GBP 250000",
+                },
+            )
             return AgentInvestigationOutput(
                 claim_id=request.claim_id,
                 status="answered" if source else "insufficient_evidence",
-                summary="Flood damage is subject to the policy limit." if source else "",
-                summary_source_ids=[source.source_id] if source else [],
+                summary=(
+                    "The water loss is covered during the insured period. No schedule limitations "
+                    "are present, and the endorsement allows assessment despite the unknown duration."
+                    if source
+                    else ""
+                ),
+                summary_source_ids=(
+                    [claim_source.source_id, policy_source.source_id, source.source_id]
+                    if source
+                    else []
+                ),
                 findings=[],
                 unresolved_questions=[],
-                sources=initial_sources,
+                sources=[*initial_sources, claim_source, policy_source] if source else [],
                 model="test-model",
                 tool_calls=0,
                 latency_ms=10,
@@ -289,7 +325,7 @@ def test_hybrid_endpoint_retrieves_policy_evidence_before_agent(
         "/v1/claims/hybrid-investigations",
         json={
             "claim_id": "CL-123",
-            "narrative": "Flood water entered the home overnight.",
+            "narrative": "A domestic pipe failed overnight and water damaged the home; duration is unknown.",
             "guidance_as_of": "2026-01-01",
         },
     )
@@ -297,18 +333,36 @@ def test_hybrid_endpoint_retrieves_policy_evidence_before_agent(
     assert response.status_code == 200
     assert observed["retrieval_only"] is True
     assert observed["rag_request"].policy_id == "HOME-002"
+    assert "domestic pipe failed overnight" in observed["rag_request"].question
     assert observed["rag_request"].loss_date == date(2025, 3, 1)
     assert observed["rag_request"].guidance_as_of == date(2026, 1, 1)
     assert observed["rag_request"].mode == "hybrid_rerank"
+    assert observed["rag_request"].top_k == 8
     if rag_failure:
         assert observed["agent_sources"] == []
         assert response.json()["policy_evidence_status"] == "unavailable"
         assert response.json()["policy_evidence_unavailable_reason"] == "retrieval_dependency_failed"
         assert response.json()["investigation"]["status"] == "insufficient_evidence"
     else:
-        assert observed["agent_sources"][0].source_id == "policy_evidence:chunk-1"
+        sources_by_document = {
+            source.facts["doc_id"]: source for source in observed["agent_sources"]
+        }
+        assert set(sources_by_document) == {
+            "END-HOME-002-WATER-LIMIT-02",
+            "PROC-HOME-WATER-EVIDENCE-01",
+        }
         assert response.json()["policy_evidence_status"] == "retrieved"
         assert response.json()["policy_evidence_unavailable_reason"] is None
+        investigation = response.json()["investigation"]
+        assert investigation["status"] == "insufficient_evidence"
+        assert investigation["summary"] == ""
+        assert investigation["summary_source_ids"] == []
+        assert investigation["findings"] == []
+        assert investigation["unresolved_questions"] == [
+            "Does the policy schedule list the applicable endorsement and limits?",
+            "What expiry or lapse information confirms the policy was in force on the loss date?",
+            "What evidence establishes the cause and duration of the reported water damage?",
+        ]
 
 
 def test_agent_endpoint_sanitizes_dependency_errors(api_client, monkeypatch) -> None:
@@ -328,6 +382,210 @@ def test_agent_endpoint_sanitizes_dependency_errors(api_client, monkeypatch) -> 
     assert response.status_code == 502
     assert response.json()["detail"] == "Claims agent dependency failed"
     assert "provider secret" not in response.text
+
+
+@pytest.mark.parametrize(
+    "unsafe_summary",
+    [
+        "The policy schedule does not list repair costs, so those are not covered.",
+        "The claim is covered under the policy's escape of water clause.",
+        "The endorsement states that the claim will be assessed on available evidence.",
+    ],
+)
+def test_hybrid_evidence_guard_abstains_on_unsupported_policy_claims(
+    unsafe_summary: str,
+) -> None:
+    policy_evidence = main.InvestigationSource(
+        source_id="policy_evidence:water-clarification",
+        source_type="policy_evidence",
+        record_id="water-clarification",
+        label="Home Water Damage Clarification Endorsement, section 3",
+        facts={
+            "doc_id": "END-HOME-002-WATER-LIMIT-02",
+            "text": "Assess cause and duration from evidence; do not require rejection when uncertain.",
+        },
+    )
+    policy_record = main.InvestigationSource(
+        source_id="policy:HOME-002",
+        source_type="policy",
+        record_id="HOME-002",
+        label="Synthetic policy record HOME-002",
+        facts={"status": "active", "effective_date": "2024-01-01"},
+    )
+    investigation = AgentInvestigationOutput(
+        claim_id="CL-123",
+        status="answered",
+        summary=unsafe_summary,
+        summary_source_ids=[policy_evidence.source_id, policy_record.source_id],
+        findings=[],
+        unresolved_questions=[],
+        sources=[policy_evidence, policy_record],
+        model="test-model",
+        tool_calls=0,
+        latency_ms=1,
+    )
+
+    result = main.enforce_hybrid_evidence_constraints(investigation)
+
+    assert result.status == "insufficient_evidence"
+    assert result.summary == ""
+    assert result.summary_source_ids == []
+    assert result.findings == []
+    assert result.unresolved_questions == [
+        "Does the policy schedule list the applicable endorsement and limits?",
+        "What expiry or lapse information confirms the policy was in force on the loss date?",
+        "What evidence establishes the cause and duration of the reported water damage?",
+    ]
+
+
+def test_hybrid_evidence_guard_keeps_flood_extension_applicability_unresolved() -> None:
+    flood_evidence = main.InvestigationSource(
+        source_id="policy_evidence:flood-extension",
+        source_type="policy_evidence",
+        record_id="flood-extension",
+        label="Home Flood Extension Endorsement, section 1",
+        facts={
+            "doc_id": "END-HOME-002-FLOOD-EXT-01",
+            "text": (
+                "This synthetic endorsement applies only when it is listed on the HOME-002 schedule. "
+                "It replaces clause 4.2 for direct flood losses."
+            ),
+        },
+    )
+    policy_record = main.InvestigationSource(
+        source_id="policy:HOME-002",
+        source_type="policy",
+        record_id="HOME-002",
+        label="Synthetic policy record HOME-002",
+        facts={"status": "active", "effective_date": "2024-01-01"},
+    )
+    investigation = AgentInvestigationOutput(
+        claim_id="CL-123",
+        status="answered",
+        summary="The flood extension applies to surface-water losses on this claim.",
+        summary_source_ids=[flood_evidence.source_id, policy_record.source_id],
+        findings=[],
+        unresolved_questions=[],
+        sources=[flood_evidence, policy_record],
+        model="test-model",
+        tool_calls=0,
+        latency_ms=1,
+    )
+
+    result = main.enforce_hybrid_evidence_constraints(investigation)
+
+    assert result.status == "insufficient_evidence"
+    assert result.summary == ""
+    assert result.summary_source_ids == []
+    assert result.findings == []
+    assert "Does the policy schedule list the applicable endorsement and limits?" in result.unresolved_questions
+
+
+def test_hybrid_flood_route_abstains_when_extension_schedule_is_missing(
+    api_client,
+    monkeypatch,
+) -> None:
+    original_client = httpx.Client
+
+    def service_response(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/v1/claims/CL-123"
+        return httpx.Response(
+            200,
+            json={
+                "claim_id": "CL-123",
+                "policy_id": "HOME-002",
+                "customer_id": "CUST-123",
+                "loss_date": "2025-03-01",
+                "reported_event": "Water entered after a reported pipe failure.",
+                "status": "under_review",
+            },
+        )
+
+    monkeypatch.setattr(
+        main.httpx,
+        "Client",
+        lambda **kwargs: original_client(
+            transport=httpx.MockTransport(service_response),
+            **kwargs,
+        ),
+    )
+    monkeypatch.setattr(main.settings, "claims_service_url", "http://claims-service")
+    observed = {}
+
+    def fake_rag_query(request, *, retrieval_only=False):
+        observed["request"] = request
+        assert retrieval_only is True
+        return SimpleNamespace(
+            chunks=[
+                SimpleNamespace(
+                    chunk_id="flood-extension-1",
+                    doc_id="END-HOME-002-FLOOD-EXT-01",
+                    title="Home Flood Extension Endorsement",
+                    section="1",
+                    clause=None,
+                    page=1,
+                    text=(
+                        "This extension applies only when listed on the HOME-002 schedule. "
+                        "It replaces clause 4.2 for direct flood losses."
+                    ),
+                )
+            ]
+        )
+
+    monkeypatch.setattr(main, "execute_rag_query", fake_rag_query)
+    monkeypatch.setattr(
+        main,
+        "assess_claim_risk",
+        lambda *args, **kwargs: main.HybridRiskAssessment(
+            status="available",
+            priority_band="routine_review",
+            handler_triage_required=False,
+            triage_reason=None,
+            model_version="stage5-test",
+            unavailable_reason=None,
+        ),
+    )
+
+    class FakeAgent:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def investigate(self, request, *, initial_sources):
+            source_id = initial_sources[0].source_id
+            return AgentInvestigationOutput(
+                claim_id=request.claim_id,
+                status="answered",
+                summary="The flood extension applies to direct surface-water losses.",
+                summary_source_ids=[source_id],
+                findings=[],
+                unresolved_questions=[],
+                sources=initial_sources,
+                model="test-model",
+                tool_calls=0,
+                latency_ms=1,
+            )
+
+    monkeypatch.setattr(main, "ClaimsAgent", FakeAgent)
+    response = api_client.post(
+        "/v1/claims/hybrid-investigations",
+        json={
+            "claim_id": "CL-123",
+            "narrative": "Surface-water runoff entered the home and caused direct flood damage.",
+            "guidance_as_of": "2026-01-01",
+        },
+    )
+
+    assert response.status_code == 200
+    assert observed["request"].top_k == 8
+    body = response.json()
+    assert body["policy_evidence_status"] == "retrieved"
+    assert body["investigation"]["status"] == "insufficient_evidence"
+    assert body["investigation"]["summary"] == ""
+    assert body["investigation"]["findings"] == []
+    assert "Does the policy schedule list the applicable endorsement and limits?" in (
+        body["investigation"]["unresolved_questions"]
+    )
 
 
 def test_agent_rag_evidence_uses_claim_policy_and_loss_date(monkeypatch) -> None:

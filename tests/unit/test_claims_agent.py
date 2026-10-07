@@ -55,40 +55,6 @@ def model_final_response(*, source_id: str = "claim:CL-123") -> httpx.Response:
     )
 
 
-def model_final_tool_response(*, source_id: str = "claim:CL-123") -> httpx.Response:
-    final_payload = {
-        "status": "answered",
-        "summary": "The claim is under review.",
-        "summary_source_ids": [source_id],
-        "findings": [
-            {"text": "The reported event is water damage.", "source_ids": [source_id]}
-        ],
-        "unresolved_questions": [],
-    }
-    return httpx.Response(
-        200,
-        json={
-            "choices": [
-                {
-                    "message": {
-                        "role": "assistant",
-                        "tool_calls": [
-                            {
-                                "id": "final-1",
-                                "type": "function",
-                                "function": {
-                                    "name": "submit_final_answer",
-                                    "arguments": json.dumps(final_payload),
-                                },
-                            }
-                        ],
-                    }
-                }
-            ]
-        },
-    )
-
-
 def claim_response() -> httpx.Response:
     return httpx.Response(
         200,
@@ -272,13 +238,12 @@ def test_agent_reserves_last_model_turn_for_final_response() -> None:
                 return model_tool_response(
                     tool_call("get_claim", {"claim_id": "CL-123"}, call_id=f"call-{model_turn}")
                 )
-            assert [tool["function"]["name"] for tool in payload["tools"]] == [
-                "submit_final_answer"
-            ]
-            assert payload["tool_choice"] == "required"
-            assert "When the submit_final_answer function is supplied, call it exactly once" in payload["messages"][0]["content"]
+            assert "tools" not in payload
+            assert payload["response_format"] == {"type": "json_object"}
+            assert request.extensions["timeout"]["read"] == 60.0
+            assert "one JSON object" in payload["messages"][0]["content"]
             assert "final turn" in payload["messages"][-1]["content"].lower()
-            return model_final_tool_response()
+            return model_final_response()
         return claim_response()
 
     agent = make_agent(handle)
@@ -305,7 +270,7 @@ def test_agent_ignores_premature_unstructured_answer_until_final_turn() -> None:
                     200,
                     json={"choices": [{"message": {"role": "assistant", "content": "I will finish the sourced response on the final turn."}}]},
                 )
-            return model_final_tool_response()
+            return model_final_response()
         return claim_response()
 
     result = make_agent(handle).investigate(
@@ -579,8 +544,11 @@ def test_adversarial_tool_text_does_not_expand_available_tools() -> None:
             assert "update_claim" not in tool_names
             assert "Never request a payment" in payload["messages"][0]["content"]
             assert "Do not infer that an endorsement preserves or changes a policy term by silence" in payload["messages"][0]["content"]
+            assert "An endorsement that requires schedule listing is neither applicable nor inapplicable without schedule evidence" in payload["messages"][0]["content"]
+            assert "Do not claim that a policy was in force from its effective date alone; expiry evidence is required" in payload["messages"][0]["content"]
+            assert "When schedule, cause, or duration evidence is missing, include the corresponding unresolved question" in payload["messages"][0]["content"]
             assert "First retrieve the claim record" in payload["messages"][0]["content"]
-            assert "When the submit_final_answer function is supplied, call it exactly once" in payload["messages"][0]["content"]
+            assert "one JSON object" in payload["messages"][0]["content"]
             if model_turn == 1:
                 return model_tool_response(tool_call("get_claim", {"claim_id": "CL-123"}))
             return model_final_response()
