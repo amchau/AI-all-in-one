@@ -22,7 +22,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: claims-frontend
-          image: localhost/claims-frontend:stage3.6
+          image: localhost/claims-frontend:stage6.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

@@ -154,6 +154,37 @@ def test_agent_runs_allowlisted_tool_and_validates_source_refs() -> None:
     assert result.sources[0].facts["policy_id"] == "HOME-002"
 
 
+def test_agent_accepts_initial_policy_evidence_as_validated_source_context() -> None:
+    captured_messages: list[dict[str, object]] = []
+    policy_source = InvestigationSource(
+        source_id="policy_evidence:chunk-1",
+        source_type="policy_evidence",
+        record_id="chunk-1",
+        label="Home policy clause 4.2",
+        facts={"text": "Flood damage is covered subject to the stated limit."},
+    )
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        captured_messages.extend(payload["messages"])
+        return model_final_response(source_id=policy_source.source_id)
+
+    agent = make_agent(handle)
+    result = agent.investigate(
+        AgentInvestigationInput(
+            claim_id="CL-123",
+            narrative="Flood water entered the home overnight.",
+        ),
+        initial_sources=[policy_source],
+    )
+
+    assert result.tool_calls == 0
+    assert result.summary_source_ids == [policy_source.source_id]
+    assert result.sources == [policy_source]
+    assert policy_source.source_id in str(captured_messages[1]["content"])
+    assert "Flood damage is covered" in str(captured_messages[1]["content"])
+
+
 @pytest.mark.parametrize("name", ["run_sql", "approve_claim", "issue_payment", "update_claim"])
 def test_agent_rejects_unknown_tool_before_dispatch(name: str) -> None:
     business_calls: list[str] = []

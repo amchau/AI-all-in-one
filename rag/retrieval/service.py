@@ -104,6 +104,7 @@ class RagQueryService:
         request: RagQueryInput,
         *,
         structured_investigation: bool = False,
+        retrieval_only: bool = False,
     ) -> RagQueryResult:
         started_at = time.perf_counter()
         guidance_as_of = request.guidance_as_of or request.loss_date
@@ -214,7 +215,7 @@ class RagQueryService:
             if structured_investigation
             else None
         )
-        if chunks:
+        if chunks and not retrieval_only:
             try:
                 with _start_rag_span("rag.generate") as span:
                     if structured_investigation:

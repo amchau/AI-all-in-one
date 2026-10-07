@@ -1,3 +1,5 @@
+"""Contract tests for the synthetic claims service API."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -42,6 +44,40 @@ def test_claims_service_returns_not_found_without_echoing_unknown_id() -> None:
     assert response.status_code == 404
     assert response.json() == {"detail": "Claim not found"}
     assert "CL-SECRET-UNKNOWN" not in response.text
+
+
+def test_claims_service_exposes_fixed_risk_features_for_known_claims() -> None:
+    expected = {
+        "CL-123": {
+            "assessment_complete": True,
+            "features": {
+                "duplicate_document_count": 0,
+                "date_inconsistency_count": 1,
+                "missing_required_evidence_count": 1,
+                "prior_open_claim_count": 0,
+                "estimate_limit_ratio": 0.5,
+            },
+        },
+        "CL-124": {
+            "assessment_complete": True,
+            "features": {
+                "duplicate_document_count": 0,
+                "date_inconsistency_count": 0,
+                "missing_required_evidence_count": 0,
+                "prior_open_claim_count": 0,
+                "estimate_limit_ratio": 0.25,
+            },
+        },
+    }
+
+    for claim_id, expected_body in expected.items():
+        response = CLIENT.get(f"/v1/claims/{claim_id}/risk-features")
+        assert response.status_code == 200
+        assert response.json() == {"claim_id": claim_id, **expected_body}
+
+    unknown = CLIENT.get("/v1/claims/CL-UNKNOWN/risk-features")
+    assert unknown.status_code == 404
+    assert unknown.json() == {"detail": "Claim not found"}
 
 
 def test_claims_service_has_no_write_routes() -> None:

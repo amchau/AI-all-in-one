@@ -11,14 +11,12 @@ import {
 } from "lucide-react";
 
 import { createInvestigation } from "./api";
-import type { ClaimsInvestigationResponse } from "./api";
+import type { ClaimsInvestigationResponse, InvestigationSource } from "./api";
 import { investigationRequestSchema } from "./validation";
 import type { ClaimsInvestigationRequest } from "./validation";
 
 interface ClaimDraft {
   claim_id: string;
-  policy_id: string;
-  loss_date: string;
   guidance_as_of: string;
   narrative: string;
 }
@@ -27,39 +25,119 @@ type ClaimField = keyof ClaimDraft;
 
 const emptyDraft: ClaimDraft = {
   claim_id: "",
-  policy_id: "",
-  loss_date: "",
   guidance_as_of: "",
   narrative: "",
 };
 
-function evidenceAnchor(chunkId: string): string {
-  return `evidence-${chunkId.replace(/[^A-Za-z0-9_-]/g, "-")}`;
-}
-
-function CitationLinks({
-  citations,
+function SourceReferences({
+  sourceIds,
+  sources,
 }: {
-  citations: ClaimsInvestigationResponse["summary_citations"];
+  sourceIds: string[];
+  sources: InvestigationSource[];
 }) {
   return (
-    <span className="citation-links">
-      {citations.map((citation) => (
-        <a
-          className="citation-link"
-          href={`#${evidenceAnchor(citation.chunk_id)}`}
-          key={`${citation.ref}-${citation.chunk_id}`}
-          aria-label={`Open cited evidence ${citation.ref}`}
-        >
-          {citation.ref}<ArrowRight aria-hidden="true" size={12} />
-        </a>
-      ))}
-    </span>
+    <ul className="source-references" aria-label="Supporting sources">
+      {sourceIds.map((sourceId) => {
+        const source = sources.find((item) => item.source_id === sourceId);
+        return (
+          <li key={sourceId}>
+            <span>{source?.label ?? sourceId}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function RiskAdvisory({ result }: { result: ClaimsInvestigationResponse }) {
+  const risk = result.risk_assessment;
+  const statusLabel = risk.status === "unavailable"
+    ? "Assessment unavailable"
+    : risk.handler_triage_required
+      ? "Handler triage required"
+      : risk.priority_band === "priority_review"
+        ? "Priority review"
+        : "Routine review";
+  const detail = risk.status === "unavailable"
+    ? "The referral assessment could not be completed."
+    : risk.triage_reason === "assessment_incomplete"
+      ? "The available assessment is incomplete."
+      : risk.triage_reason === "near_decision_threshold"
+        ? "The assessment is near its review threshold."
+        : "Advisory referral signal only; handler retains the claim decision.";
+
+  return (
+    <section className={`risk-advisory ${risk.status === "unavailable" ? "is-unavailable" : ""}`} aria-label="Risk referral advisory">
+      <div className="risk-advisory-heading">
+        <div>
+          <p className="eyebrow">Separate advisory</p>
+          <h3>{statusLabel}</h3>
+        </div>
+        <span className="advisory-tag">NOT A CLAIM DECISION</span>
+      </div>
+      <p>{detail}</p>
+      {risk.model_version && <span className="risk-model-version">Model {risk.model_version}</span>}
+    </section>
+  );
+}
+
+function PolicyEvidenceStatus({ result }: { result: ClaimsInvestigationResponse }) {
+  const status = result.policy_evidence_status;
+  const message = status === "retrieved"
+    ? "Policy evidence was retrieved and supplied to the investigation."
+    : status === "insufficient_evidence"
+      ? "Policy evidence search completed, but returned no matching clauses."
+      : result.policy_evidence_unavailable_reason === "source_selection_failed"
+        ? "Applicable policy sources could not be resolved for these dates."
+        : "Policy evidence could not be retrieved.";
+
+  return (
+    <section
+      className={`policy-evidence-status is-${status}`}
+      aria-label="Policy evidence status"
+      aria-live="polite"
+    >
+      <span className="status-mark" aria-hidden="true" />
+      <div>
+        <p className="eyebrow">Policy evidence</p>
+        <p>{message}</p>
+      </div>
+    </section>
+  );
+}
+
+function PolicyEvidence({ sources }: { sources: InvestigationSource[] }) {
+  const policySources = sources.filter(
+    (source) => source.source_type === "policy_evidence" && typeof source.facts.text === "string",
+  );
+  if (policySources.length === 0) return null;
+
+  return (
+    <section className="evidence-section" aria-label="Policy evidence">
+      <div className="section-label">
+        <span className="section-number">04</span>
+        <h3>Policy evidence</h3>
+      </div>
+      <div className="evidence-list">
+        {policySources.map((source) => (
+          <article className="evidence-item" key={source.source_id}>
+            <div className="evidence-ref">{source.source_id}</div>
+            <div className="evidence-content">
+              <h4>{source.label}</h4>
+              <blockquote>{source.facts.text as string}</blockquote>
+            </div>
+            <FileText aria-hidden="true" className="evidence-icon" size={18} />
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
 function Brief({ result }: { result: ClaimsInvestigationResponse }) {
-  const answered = result.status === "answered";
+  const investigation = result.investigation;
+  const answered = investigation.status === "answered";
   return (
     <div className="brief">
       <div className={`result-banner ${answered ? "is-answered" : "is-abstained"}`}>
@@ -74,6 +152,9 @@ function Brief({ result }: { result: ClaimsInvestigationResponse }) {
         </div>
       </div>
 
+      <RiskAdvisory result={result} />
+      <PolicyEvidenceStatus result={result} />
+
       {answered && (
         <>
           <section className="summary-section" aria-labelledby="summary-title">
@@ -81,8 +162,8 @@ function Brief({ result }: { result: ClaimsInvestigationResponse }) {
               <span className="section-number">01</span>
               <h3 id="summary-title">Brief summary</h3>
             </div>
-            <p className="summary-copy">{result.summary}</p>
-            <CitationLinks citations={result.summary_citations} />
+            <p className="summary-copy">{investigation.summary}</p>
+            <SourceReferences sourceIds={investigation.summary_source_ids} sources={investigation.sources} />
           </section>
 
           <section className="findings-section" aria-labelledby="findings-title">
@@ -91,12 +172,12 @@ function Brief({ result }: { result: ClaimsInvestigationResponse }) {
               <h3 id="findings-title">Findings</h3>
             </div>
             <ol className="finding-list">
-              {result.findings.map((finding, index) => (
+              {investigation.findings.map((finding, index) => (
                 <li className="finding" key={`${finding.text}-${index}`}>
                   <span className="finding-index">{String(index + 1).padStart(2, "0")}</span>
                   <div>
                     <p>{finding.text}</p>
-                    <CitationLinks citations={finding.citations} />
+                    <SourceReferences sourceIds={finding.source_ids} sources={investigation.sources} />
                   </div>
                 </li>
               ))}
@@ -105,50 +186,22 @@ function Brief({ result }: { result: ClaimsInvestigationResponse }) {
         </>
       )}
 
-      {result.unresolved_questions.length > 0 && (
+      {investigation.unresolved_questions.length > 0 && (
         <section className="questions-section" aria-labelledby="questions-title">
           <div className="section-label">
-            <span className="section-number">{answered ? "03" : "01"}</span>
+            <span className="section-number">03</span>
             <h3 id="questions-title">Unresolved questions</h3>
           </div>
           <ul>
-            {result.unresolved_questions.map((question) => <li key={question}>{question}</li>)}
+            {investigation.unresolved_questions.map((question) => <li key={question}>{question}</li>)}
           </ul>
         </section>
       )}
 
-      {result.evidence.length > 0 && (
-        <section className="evidence-section" aria-label="Cited evidence">
-          <div className="section-label">
-            <span className="section-number">04</span>
-            <h3>Source evidence</h3>
-          </div>
-          <div className="evidence-list">
-            {result.evidence.map((item) => (
-              <article
-                className="evidence-item"
-                id={evidenceAnchor(item.chunk_id)}
-                key={item.chunk_id}
-              >
-                <div className="evidence-ref">{item.ref}</div>
-                <div className="evidence-content">
-                  <h4>{item.title}</h4>
-                  <p className="evidence-location">
-                    {item.section ? `Section ${item.section}` : "Policy wording"}
-                    {item.clause ? ` · Clause ${item.clause}` : ""}
-                    {` · Page ${item.page}`}
-                  </p>
-                  <blockquote>{item.text}</blockquote>
-                </div>
-                <FileText aria-hidden="true" className="evidence-icon" size={18} />
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
+      <PolicyEvidence sources={investigation.sources} />
 
       <footer className="brief-footer">
-        <span>Evidence only · handler retains the claim decision</span>
+        <span>Evidence and referral are advisory · handler retains the claim decision</span>
         <span>{result.latency_ms.toLocaleString()} ms</span>
       </footer>
     </div>
@@ -231,7 +284,7 @@ export default function App() {
         </a>
         <div className="topbar-right">
           <span className="environment-tag"><span />LOCAL SYNTHETIC DATA</span>
-          <span className="stage-tag">STAGE 03</span>
+          <span className="stage-tag">STAGE 06</span>
         </div>
       </header>
 
@@ -259,35 +312,8 @@ export default function App() {
                 />
                 {fieldErrors.claim_id && <small id="claim-id-error">{fieldErrors.claim_id}</small>}
               </label>
-              <label className="field">
-                <span>Policy ID</span>
-                <input
-                  autoComplete="off"
-                  disabled={loading}
-                  maxLength={80}
-                  name="policy_id"
-                  value={draft.policy_id}
-                  onChange={(event) => updateField("policy_id", event.target.value)}
-                  aria-invalid={Boolean(fieldErrors.policy_id)}
-                  aria-describedby={fieldErrors.policy_id ? "policy-id-error" : undefined}
-                />
-                {fieldErrors.policy_id && <small id="policy-id-error">{fieldErrors.policy_id}</small>}
-              </label>
             </div>
             <div className="field-row">
-              <label className="field">
-                <span>Loss date</span>
-                <input
-                  name="loss_date"
-                  disabled={loading}
-                  type="date"
-                  value={draft.loss_date}
-                  onChange={(event) => updateField("loss_date", event.target.value)}
-                  aria-invalid={Boolean(fieldErrors.loss_date)}
-                  aria-describedby={fieldErrors.loss_date ? "loss-date-error" : undefined}
-                />
-                {fieldErrors.loss_date && <small id="loss-date-error">{fieldErrors.loss_date}</small>}
-              </label>
               <label className="field">
                 <span>Guidance date <em>OPTIONAL</em></span>
                 <input

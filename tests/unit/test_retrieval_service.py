@@ -1,3 +1,5 @@
+"""Tests for RAG source selection, retrieval, generation, and failure handling."""
+
 from datetime import date
 from dataclasses import replace
 from types import SimpleNamespace
@@ -206,6 +208,35 @@ def test_success_embeds_question_searches_dense_and_generates_grounded_answer() 
     assert result.answer.citations[0].chunk_id == "chunk-1"
     assert result.mode == "dense"
     assert result.chunks[0].dense_score == 0.82
+
+
+def test_retrieval_only_returns_ranked_chunks_without_generation() -> None:
+    generator = FakeGenerator()
+    service = RagQueryService(
+        source_repository=FakeRepository([document()]),
+        embedder=FakeEmbedder(),
+        sparse_embedder=FakeSparseEmbedder(),
+        qdrant_client=FakeQdrant(),
+        reranker=FakeReranker(),
+        answer_generator=generator,
+    )
+
+    result = service.query(
+        RagQueryInput(
+            question="Retrieve policy wording for the reported water damage.",
+            policy_id="HOME-002",
+            loss_date=date(2025, 3, 1),
+            guidance_as_of=date(2026, 1, 1),
+            mode="hybrid_rerank",
+            top_k=5,
+        ),
+        retrieval_only=True,
+    )
+
+    assert result.answer.status == "insufficient_evidence"
+    assert result.chunks[0].chunk_id == "chunk-1"
+    assert result.chunks[0].ref == "C1"
+    assert generator.calls == []
 
 
 def test_hybrid_uses_sparse_rrf_but_does_not_call_reranker() -> None:

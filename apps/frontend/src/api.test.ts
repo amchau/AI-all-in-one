@@ -7,8 +7,6 @@ import type { ClaimsInvestigationResponse } from "./api";
 
 const request = {
   claim_id: "CL-123",
-  policy_id: "HOME-002",
-  loss_date: "2025-03-01",
   narrative: "Flood water entered the ground floor overnight.",
 };
 
@@ -17,13 +15,29 @@ const responseBody: ClaimsInvestigationResponse = {
   policy_id: "HOME-002",
   loss_date: "2025-03-01",
   guidance_as_of: "2025-03-01",
-  status: "answered",
-  summary: "Flood cover is subject to limits.",
-  summary_citations: [],
-  findings: [],
-  unresolved_questions: [],
-  evidence: [],
-  model: "gpt-oss-20b",
+  policy_evidence_status: "retrieved",
+  policy_evidence_unavailable_reason: null,
+  investigation: {
+    claim_id: "CL-123",
+    status: "answered",
+    summary: "Flood cover is subject to limits.",
+    summary_source_ids: [],
+    findings: [],
+    unresolved_questions: [],
+    sources: [],
+    model: "gpt-oss-20b",
+    tool_calls: 2,
+    latency_ms: 120,
+    trace_id: "f8b71e2420453174714c9aed94a0d4ea",
+  },
+  risk_assessment: {
+    status: "available",
+    priority_band: "priority_review",
+    handler_triage_required: false,
+    triage_reason: null,
+    model_version: "stage5-test",
+    unavailable_reason: null,
+  },
   latency_ms: 120,
   trace_id: "f8b71e2420453174714c9aed94a0d4ea",
 };
@@ -39,19 +53,22 @@ describe("investigation API client", () => {
 
     await expect(createInvestigation(request)).resolves.toEqual(responseBody);
     expect(fetch).toHaveBeenCalledWith(
-      "/api/v1/investigations",
+      "/api/v1/claims/hybrid-investigations",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify(request),
+        body: JSON.stringify({
+          claim_id: request.claim_id,
+          narrative: request.narrative,
+        }),
       }),
     );
   });
 
-  it("maps policy conflicts to safe user-facing messages", async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response("private details", { status: 409 }));
+  it("maps missing claims to a safe user-facing message", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response("private details", { status: 404 }));
 
     await expect(createInvestigation(request)).rejects.toThrow(
-      "The applicable policy wording is ambiguous. Review the policy dates.",
+      "The claim was not found in the synthetic claims service.",
     );
     await expect(createInvestigation(request)).rejects.not.toThrow("private details");
   });

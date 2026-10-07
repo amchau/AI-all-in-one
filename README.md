@@ -10,6 +10,7 @@ Current progress:
 - Stage 3 Claims Copilot is complete. API/UI are deployed locally; automated checks and a live cited brief with collector trace pass.
 - Stage 4 bounded claims tool-calling workflow is done for the local synthetic learning scope; API and synthetic claims-service are deployed, live RAG evidence and collector spans were exercised, and unit/integration checks pass. The reviewed evaluation documents model-quality limitations and is not a production-readiness claim. See the [Stage 4 evaluation report](docs/eval/stage4-claims-agent-report.md) and [handoff](docs/04-stage4-handoff.md).
 - Stage 5 claims risk model is done for the approved local synthetic prototype. It is advisory, routes uncertain cases to handler triage, and is not a fraud or coverage decision or a production-readiness claim. See the [Stage 5 evaluation report](docs/eval/stage5-risk-model-report.md) and [plan](docs/05-stage5-claims-risk-model-plan.md).
+- Stage 6 hybrid claims investigation's October 7 mandatory-retrieval amendment is deployed and live-trace verified, pending user review. The combined endpoint retrieves policy evidence before the agent and keeps Stage 5 referral separate. See the [Stage 6 integration report](docs/eval/stage6-hybrid-ai-report.md), [plan](docs/06-stage6-hybrid-ai-plan.md), and [ADR-013](docs/adr/ADR-013-stage6-hybrid-orchestration.md).
 - See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md), and [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md).
 
 ## Stack
@@ -76,7 +77,7 @@ cp .env.example .env
 ```
 
 `deploy-stage1.sh` safely parses `.env` and creates/updates Kubernetes secret `stage1-secrets`.
-The API build script creates `localhost/ai-api:stage4.0`. The ingestion Job is
+The API build script creates `localhost/ai-api:stage6.0`. The ingestion Job is
 registered but suspended during normal deployment. On a fresh database, the script defers only
 the API readiness wait while `rag_query` is absent; the API becomes ready after the query role and
 schema grants are provisioned.
@@ -195,9 +196,10 @@ hosted embedding (currently OpenRouter) and generation (currently Groq) provider
 text only and never enter real PII;
 provider retention is outside this repository's control.
 Stage 2 and its Phase 2.4 `top_k=20` follow-up are now complete. The legacy
-cluster-internal `/v1/investigate` endpoint remains for existing callers; the UI uses the grounded
-`/v1/investigations` endpoint. Stage 4 adds the separate synthetic-only
-`POST /v1/claims/agent-investigations` endpoint; it performs bounded, read-only tool lookups and
+cluster-internal `/v1/investigate` endpoint remains for existing callers; the Stage 6 UI uses
+`/v1/claims/hybrid-investigations`. Stage 3's RAG-only `/v1/investigations` and Stage 4's separate
+synthetic-only `POST /v1/claims/agent-investigations` endpoint remain backward-compatible; Stage 4
+performs bounded, read-only tool lookups and
 may retrieve policy evidence through the existing RAG service. The endpoint does not make coverage
 or fraud determinations and is not an authenticated production interface. Stage 4's API and mock service are now deployed to the local cluster; see the [Stage 4 execution and evaluation report](docs/eval/stage4-claims-agent-report.md) for measured checks and limitations. The Stage 2 `top_k=20` prerequisite passed before integration. To build/load and roll out the synthetic service, run `./scripts/build-claims-service.sh`, then `kubectl --context kind-ai-stage1 apply -f infrastructure/kubernetes/base/claims-service.yaml` and `kubectl --context kind-ai-stage1 -n ai-platform rollout status deploy/claims-service`.
 
@@ -250,7 +252,21 @@ kubectl --context kind-ai-stage1 -n ai-platform rollout status deploy/claims-ris
 ```
 
 Metrics, provenance, and limitations: [Stage 5 evaluation report](docs/eval/stage5-risk-model-report.md).
-Stage 4 agent integration remains Stage 6.
+Stage 6 consumes this standalone API through deterministic server orchestration. It does not change
+Stage 5 features, labels, thresholds, or model semantics.
+
+## Stage 6 Hybrid Claims Investigation
+
+The combined API resolves policy and loss date from the synthetic claim record, performs hybrid RAG
+retrieval before the bounded claims agent, and returns risk advice separately. Retrieved policy
+chunks enter the agent as validated source-linked context without a separate RAG answer-generation
+call. If risk
+inference is unavailable, the investigation remains available with an explicit unavailable advisory.
+The existing frontend is the primary handler path. This is a local synthetic prototype, not a fraud
+determination, claim decision, or production interface. The October 6 smoke predates mandatory
+retrieval; the October 7 trace verifies retrieval, agent, and risk spans without an extra RAG answer
+generation call. See the [Stage 6 integration report](docs/eval/stage6-hybrid-ai-report.md) for
+verification and limitations.
 
 ## Current status
 
@@ -258,5 +274,7 @@ Stage 4 agent integration remains Stage 6.
 - Stage 2: done - bounded `top_k=20` hybrid generation passed the documented live exit check; see [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md)
 - Stage 3: done - API/UI deployed; unit/browser checks pass; live cited brief and collector trace verified
 - Stage 4: done for the reviewed local synthetic learning scope; see [the evaluation report](docs/eval/stage4-claims-agent-report.md) for limitations, including incomplete payment/fraud source coverage in the saved all-domains case
+- Stage 5: done for the approved local synthetic model scope; not real-world risk quality
+- Stage 6: implemented/deployed locally; pending user review; see [the integration report](docs/eval/stage6-hybrid-ai-report.md)
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).

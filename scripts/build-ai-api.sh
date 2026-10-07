@@ -16,7 +16,7 @@ if ! flock -n 9; then
   exit 1
 fi
 
-IMAGE_NAME="localhost/ai-api:stage4.0"
+IMAGE_NAME="localhost/ai-api:stage6.0"
 CLUSTER_NAME="ai-stage1"
 
 if [[ -z "${KIND_EXPERIMENTAL_PROVIDER:-}" ]] && command -v podman >/dev/null 2>&1; then

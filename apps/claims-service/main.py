@@ -1,3 +1,5 @@
+"""Serve read-only synthetic claims records and their bounded risk features."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -5,6 +7,8 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
+
+from ml.claims_risk.dataset import ClaimRiskFeatures
 
 
 class Contract(BaseModel):
@@ -48,6 +52,17 @@ class FraudSignal(Contract):
     signal_type: Literal["duplicate_document", "date_inconsistency", "none"]
     description: str
     status: Literal["unreviewed", "reviewed"]
+
+
+class RiskFeatureAssessment(Contract):
+    claim_id: str
+    assessment_complete: bool
+    features: ClaimRiskFeatures
+
+
+RiskFeatureAssessment.model_rebuild(
+    _types_namespace={"ClaimRiskFeatures": ClaimRiskFeatures}
+)
 
 
 app = FastAPI(title="Synthetic Claims Service", version="0.1.0")
@@ -129,6 +144,22 @@ _FRAUD_SIGNALS = {
         )
     ],
 }
+_RISK_FEATURES = {
+    "CL-123": ClaimRiskFeatures(
+        duplicate_document_count=0,
+        date_inconsistency_count=1,
+        missing_required_evidence_count=1,
+        prior_open_claim_count=0,
+        estimate_limit_ratio=0.5,
+    ),
+    "CL-124": ClaimRiskFeatures(
+        duplicate_document_count=0,
+        date_inconsistency_count=0,
+        missing_required_evidence_count=0,
+        prior_open_claim_count=0,
+        estimate_limit_ratio=0.25,
+    ),
+}
 
 
 @app.get("/livez")
@@ -147,6 +178,20 @@ def get_claim(claim_id: str) -> ClaimRecord:
     if record is None:
         raise HTTPException(status_code=404, detail="Claim not found")
     return record
+
+
+@app.get(
+    "/v1/claims/{claim_id}/risk-features",
+    response_model=RiskFeatureAssessment,
+)
+def get_claim_risk_features(claim_id: str) -> RiskFeatureAssessment:
+    if claim_id not in _CLAIMS:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    return RiskFeatureAssessment(
+        claim_id=claim_id,
+        assessment_complete=True,
+        features=_RISK_FEATURES[claim_id],
+    )
 
 
 @app.get("/v1/policies/{policy_id}", response_model=PolicyRecord)

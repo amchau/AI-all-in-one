@@ -1,3 +1,5 @@
+"""Expose RAG, claims-agent, and hybrid investigation API workflows."""
+
 from __future__ import annotations
 
 import os
@@ -21,7 +23,7 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from qdrant_client import QdrantClient
 
@@ -35,6 +37,12 @@ from agents.claims.runner import (
     AgentOutputError,
     ClaimsAgent,
 )
+from agents.claims.models import (
+    HybridClaimsInvestigationInput,
+    HybridClaimsInvestigationOutput,
+    HybridRiskAssessment,
+)
+from agents.claims.risk import assess_claim_risk
 from rag.ingestion.embed import LiteLLMEmbedder
 from rag.ingestion.sparse import FastEmbedSparseEncoder
 from rag.retrieval.generation import LiteLLMAnswerGenerator
@@ -77,6 +85,7 @@ class Settings(BaseSettings):
     reranker_url: str = "http://reranker.ai-platform.svc.cluster.local:8080"
     reranker_model: str = "BAAI/bge-reranker-base"
     claims_service_url: str = "http://claims-service.ai-platform.svc.cluster.local:8080"
+    claims_risk_service_url: str = "http://claims-risk-service.ai-platform.svc.cluster.local:8080"
 
 
 settings = Settings()
@@ -154,6 +163,17 @@ class ClaimsInvestigationResponse(BaseModel):
     model: str
     latency_ms: int
     trace_id: str | None
+
+
+class SyntheticClaimContext(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    claim_id: str
+    policy_id: str
+    customer_id: str
+    loss_date: date
+    reported_event: str
+    status: Literal["open", "under_review"]
 
 
 class RagChunkResponse(BaseModel):
@@ -300,6 +320,7 @@ def execute_rag_query(
     request: RagQueryInput,
     *,
     structured_investigation: bool = False,
+    retrieval_only: bool = False,
 ) -> RagQueryResult:
     def record_embedding_usage(token_counts: dict[str, int]) -> None:
         span = trace.get_current_span()
@@ -337,9 +358,11 @@ def execute_rag_query(
                     model=settings.litellm_model,
                 ),
             )
-            if structured_investigation:
-                return service.query(request, structured_investigation=True)
-            return service.query(request)
+            return service.query(
+                request,
+                structured_investigation=structured_investigation,
+                retrieval_only=retrieval_only,
+            )
         finally:
             qdrant_client.close()
 
@@ -535,20 +558,52 @@ def execute_agent_rag_evidence(
     claim_id: str,
     policy_id: str,
     narrative: str,
+    guidance_as_of: date | None = None,
+    claim_context: SyntheticClaimContext | None = None,
 ) -> list[InvestigationSource]:
+    sources, status, _ = execute_policy_evidence_retrieval(
+        client,
+        claim_id=claim_id,
+        policy_id=policy_id,
+        narrative=narrative,
+        guidance_as_of=guidance_as_of,
+        claim_context=claim_context,
+    )
+    if status == "unavailable":
+        raise AgentDependencyError("policy evidence unavailable")
+    return sources
+
+
+def execute_policy_evidence_retrieval(
+    client: httpx.Client,
+    *,
+    claim_id: str,
+    policy_id: str,
+    narrative: str,
+    guidance_as_of: date | None = None,
+    claim_context: SyntheticClaimContext | None = None,
+) -> tuple[
+    list[InvestigationSource],
+    Literal["retrieved", "insufficient_evidence", "unavailable"],
+    Literal["retrieval_dependency_failed", "source_selection_failed"] | None,
+]:
+    """Run one bounded retrieval and return cited sources plus an explicit status."""
     try:
-        claim_response = client.get(
-            f"{settings.claims_service_url.rstrip('/')}/v1/claims/{claim_id}",
-            timeout=5.0,
-        )
-        if claim_response.is_error:
-            raise AgentDependencyError("claim facts unavailable for policy evidence")
-        claim = claim_response.json()
-        if not isinstance(claim, dict) or claim.get("policy_id") != policy_id:
+        if claim_context is None:
+            claim_response = client.get(
+                f"{settings.claims_service_url.rstrip('/')}/v1/claims/{claim_id}",
+                timeout=5.0,
+            )
+            if claim_response.is_error:
+                raise AgentDependencyError("claim facts unavailable for policy evidence")
+            claim = SyntheticClaimContext.model_validate(claim_response.json())
+        else:
+            claim = claim_context
+        if claim.claim_id != claim_id or claim.policy_id != policy_id:
             raise AgentOutputError("policy does not match the synthetic claim")
-        loss_date = date.fromisoformat(claim["loss_date"])
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
-        raise AgentDependencyError("claim facts unavailable for policy evidence") from error
+        logger.warning("hybrid policy context failed: %s", type(error).__name__)
+        return [], "unavailable", "retrieval_dependency_failed"
 
     rag_request = RagQueryInput(
         question=(
@@ -557,15 +612,19 @@ def execute_agent_rag_evidence(
             f"Reported facts: {narrative}"
         ),
         policy_id=policy_id,
-        loss_date=loss_date,
-        guidance_as_of=loss_date,
+        loss_date=claim.loss_date,
+        guidance_as_of=guidance_as_of or claim.loss_date,
         top_k=5,
         mode="hybrid_rerank",
     )
     try:
-        result = execute_rag_query(rag_request)
-    except (AmbiguousBasePolicyError, NoApplicableBasePolicyError, QueryDependencyError) as error:
-        raise AgentDependencyError("policy evidence unavailable") from error
+        result = execute_rag_query(rag_request, retrieval_only=True)
+    except (AmbiguousBasePolicyError, NoApplicableBasePolicyError) as error:
+        logger.info("hybrid policy source selection failed: %s", type(error).__name__)
+        return [], "unavailable", "source_selection_failed"
+    except QueryDependencyError as error:
+        logger.warning("hybrid policy retrieval failed: %s", type(error).__name__)
+        return [], "unavailable", "retrieval_dependency_failed"
 
     sources: list[InvestigationSource] = []
     for chunk in result.chunks:
@@ -585,7 +644,9 @@ def execute_agent_rag_evidence(
                 },
             )
         )
-    return sources
+    if not sources:
+        return [], "insufficient_evidence", None
+    return sources, "retrieved", None
 
 
 @app.post(
@@ -625,6 +686,97 @@ def investigate_claim_with_tools(
         context = trace.get_current_span().get_span_context()
         trace_id = f"{context.trace_id:032x}" if context.is_valid else None
         return result.model_copy(update={"trace_id": trace_id})
+
+
+@app.post(
+    "/v1/claims/hybrid-investigations",
+    response_model=HybridClaimsInvestigationOutput,
+)
+def investigate_claim_with_hybrid_ai(
+    request: HybridClaimsInvestigationInput,
+) -> HybridClaimsInvestigationOutput:
+    started = time.perf_counter()
+    with tracer.start_as_current_span("claims.hybrid_investigation") as span:
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                claim_response = client.get(
+                    f"{settings.claims_service_url.rstrip('/')}/v1/claims/{request.claim_id}",
+                    timeout=5.0,
+                )
+                if claim_response.status_code == 404:
+                    raise HTTPException(status_code=404, detail="Claim not found")
+                claim_response.raise_for_status()
+                claim = SyntheticClaimContext.model_validate(claim_response.json())
+                if claim.claim_id != request.claim_id:
+                    raise ValueError("Claim identity mismatch")
+
+                agent_request = AgentInvestigationInput(
+                    claim_id=request.claim_id,
+                    narrative=request.narrative,
+                )
+                policy_sources, policy_evidence_status, policy_evidence_unavailable_reason = (
+                    execute_policy_evidence_retrieval(
+                        client,
+                        claim_id=request.claim_id,
+                        policy_id=claim.policy_id,
+                        narrative=request.narrative,
+                        guidance_as_of=request.guidance_as_of,
+                        claim_context=claim,
+                    )
+                )
+                agent = ClaimsAgent(
+                    http_client=client,
+                    claims_service_url=settings.claims_service_url,
+                    litellm_url=settings.litellm_url,
+                    litellm_master_key=settings.litellm_master_key,
+                    model=settings.litellm_model,
+                )
+                investigation = agent.investigate(
+                    agent_request,
+                    initial_sources=policy_sources,
+                )
+                risk_assessment = assess_claim_risk(
+                    client,
+                    claim_id=request.claim_id,
+                    claims_service_url=settings.claims_service_url,
+                    risk_service_url=settings.claims_risk_service_url,
+                )
+        except HTTPException:
+            raise
+        except AgentDependencyError as error:
+            raise HTTPException(
+                status_code=502,
+                detail="Claims investigation dependency failed",
+            ) from error
+        except AgentOutputError as error:
+            raise HTTPException(
+                status_code=502,
+                detail="Claims investigation response invalid",
+            ) from error
+        except (httpx.HTTPError, ValueError, ValidationError) as error:
+            logger.warning("hybrid claim resolution failed: %s", type(error).__name__)
+            raise HTTPException(
+                status_code=502,
+                detail="Claim details unavailable",
+            ) from error
+
+        context = trace.get_current_span().get_span_context()
+        trace_id = f"{context.trace_id:032x}" if context.is_valid else None
+        span.set_attribute("agent.source_count", len(investigation.sources))
+        span.set_attribute("rag.policy_evidence_status", policy_evidence_status)
+        span.set_attribute("ml.advisory_status", risk_assessment.status)
+        return HybridClaimsInvestigationOutput(
+            claim_id=claim.claim_id,
+            policy_id=claim.policy_id,
+            loss_date=claim.loss_date,
+            guidance_as_of=request.guidance_as_of or claim.loss_date,
+            policy_evidence_status=policy_evidence_status,
+            policy_evidence_unavailable_reason=policy_evidence_unavailable_reason,
+            investigation=investigation,
+            risk_assessment=risk_assessment,
+            latency_ms=round((time.perf_counter() - started) * 1000),
+            trace_id=trace_id,
+        )
 
 
 @app.post(

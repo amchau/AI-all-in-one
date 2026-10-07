@@ -9,14 +9,12 @@ const identifier = z
 
 export const investigationRequestSchema = z.object({
   claim_id: identifier,
-  policy_id: identifier,
-  loss_date: z.iso.date("Enter a valid loss date"),
   guidance_as_of: z.union([z.iso.date("Enter a valid guidance date"), z.literal("")]).optional(),
   narrative: z
     .string()
     .trim()
     .min(5, "Enter at least 5 characters")
     .max(1000, "Keep the narrative to 1,000 characters or fewer"),
-});
+}).strict();
 
 export type ClaimsInvestigationRequest = z.infer<typeof investigationRequestSchema>;

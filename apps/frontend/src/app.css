@@ -520,38 +520,118 @@ a {
   line-height: 1.62;
 }
 
-.citation-links {
-  display: inline-flex;
+.source-references {
+  display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  vertical-align: middle;
-}
-
-.summary-section > .citation-links {
-  margin-left: 31px;
-}
-
-.citation-link {
-  display: inline-flex;
-  min-height: 23px;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  color: #175546;
-  background: #e5f0e9;
-  border: 1px solid #c8ddd0;
-  border-radius: 3px;
+  gap: 5px 13px;
+  margin: 9px 0 0 31px;
+  padding: 0;
+  color: #61766c;
   font-size: 10px;
-  font-weight: 700;
-  text-decoration: none;
+  list-style: none;
 }
 
-.citation-link:hover,
-.citation-link:focus-visible {
-  color: #fff;
-  background: var(--green);
-  outline: none;
+.source-references li::before {
+  margin-right: 5px;
+  color: #899a91;
+  content: "Source:";
+}
+
+.risk-advisory {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  color: #425a50;
+  background: #f0f4e8;
+  border-left: 3px solid #788d55;
+}
+
+.risk-advisory.is-unavailable {
+  background: #f7f1e7;
+  border-left-color: #aa7a37;
+}
+
+.risk-advisory-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.risk-advisory .eyebrow {
+  margin: 0 0 3px;
+  color: #718060;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.risk-advisory h3 {
+  margin: 0;
+  color: #31483e;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.risk-advisory > p {
+  margin: 9px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.advisory-tag {
+  flex: 0 0 auto;
+  color: #718060;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.risk-model-version {
+  display: inline-block;
+  margin-top: 7px;
+  color: #788a7a;
+  font-size: 9px;
+}
+
+.policy-evidence-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 9px 12px;
+  color: #4f6559;
+  background: #f2f5ed;
+  border-left: 3px solid #788d55;
+}
+
+.policy-evidence-status.is-insufficient_evidence {
+  background: #f7f3e9;
+  border-left-color: #a67a3f;
+}
+
+.policy-evidence-status.is-unavailable {
+  background: #f7f1e7;
+  border-left-color: #aa7a37;
+}
+
+.policy-evidence-status .status-mark {
+  width: 3px;
+  min-height: 24px;
+  flex: 0 0 auto;
+  background: currentColor;
+}
+
+.policy-evidence-status .eyebrow {
+  margin: 0 0 3px;
+  color: #718060;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.policy-evidence-status p:last-child {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .finding-list {
@@ -814,8 +894,23 @@ a {
     font-size: 15px;
   }
 
-  .summary-section > .citation-links {
-    margin-left: 0;
+  .source-references {
+      margin-left: 0;
+    }
+
+    .risk-advisory {
+      padding: 12px;
+    }
+
+    .policy-evidence-status {
+      padding-right: 9px;
+      padding-left: 9px;
+    }
+
+    .advisory-tag {
+      max-width: 92px;
+      text-align: right;
+      white-space: normal;
   }
 
   .finding {

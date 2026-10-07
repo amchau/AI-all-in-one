@@ -11,7 +11,8 @@ insurance claims investigation.
 
 - Stage 3 Claims Copilot: **Done** (API/UI deployed locally; unit and browser tests pass; live cited brief and collector trace verified; plan: [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md))
 - Stage 4 claims tool-calling workflow: **Done** for the local synthetic learning scope, reviewed and accepted 2026-10-06. API and synthetic claims service are deployed locally; unit/integration checks pass and live RAG evidence has been exercised. Evaluation limitations, including incomplete source-domain coverage in the saved all-domains sample, are recorded in [docs/eval/stage4-claims-agent-report.md](docs/eval/stage4-claims-agent-report.md). Handoff: [docs/04-stage4-handoff.md](docs/04-stage4-handoff.md); plan: [docs/04-stage4-tool-calling-agent-plan.md](docs/04-stage4-tool-calling-agent-plan.md).
-- Stage 5 claims risk model: **Done for the approved local synthetic prototype**. XGBoost and a separate inference API are deployed locally; metrics and limitations: [docs/eval/stage5-risk-model-report.md](docs/eval/stage5-risk-model-report.md). No real claims data, fraud determination, claim decision, production-readiness claim, or Stage 4 agent integration.
+- Stage 5 claims risk model: **Done for the approved local synthetic prototype**. XGBoost and a separate inference API are deployed locally; metrics and limitations: [docs/eval/stage5-risk-model-report.md](docs/eval/stage5-risk-model-report.md). No real claims data, fraud determination, claim decision, or production-readiness claim.
+- Stage 6 hybrid claims investigation: **Mandatory retrieval amendment deployed and live-trace verified 2026-10-07; answer-quality review remains open**. Combined investigations retrieve policy evidence before agent execution and keep Stage 5 referral separate; risk outage returns a partial result. Plan: [docs/06-stage6-hybrid-ai-plan.md](docs/06-stage6-hybrid-ai-plan.md); handoff/next steps: [docs/06-stage6-handoff.md](docs/06-stage6-handoff.md); [ADR-013](docs/adr/ADR-013-stage6-hybrid-orchestration.md); results and limits: [docs/eval/stage6-hybrid-ai-report.md](docs/eval/stage6-hybrid-ai-report.md).
 - Stage 2 is **done**: the Phase 2.4 `top_k=20` hybrid generation follow-up passed live verification; Phases 2.5 and 2.6 are complete. Results: [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md).
 - Completed: Stage 1 foundation ([docs/01-stage1-foundation.md](docs/01-stage1-foundation.md))
 
@@ -36,7 +37,7 @@ insurance claims investigation.
 |---------|--------|-------|
 | Cluster | kind on Podman (`KIND_EXPERIMENTAL_PROVIDER=podman`), cluster `ai-stage1` | `infrastructure/kind/` |
 | Namespace | `ai-platform` | `infrastructure/kubernetes/base/` (kustomize) |
-| API | FastAPI `apps/ai-api` + shared `rag/` and `agents/` packages | image `localhost/ai-api:stage4.0` |
+| API | FastAPI `apps/ai-api` + shared `rag/`, `agents/`, and `ml/` contracts | image `localhost/ai-api:stage6.0` |
 | LLM gateway | LiteLLM, alias `gpt-oss-20b` -> `groq/openai/gpt-oss-20b` | `litellm-configmap.yaml` |
 | Vector DB | Qdrant v1.19.1; named-vector changes use `qdrant-client` v1.19.1 | `qdrant.yaml` |
 | Relational | PostgreSQL 16 | `postgres.yaml` |
@@ -109,6 +110,7 @@ bash -n scripts/*.sh && python3 -m py_compile apps/ai-api/main.py apps/claims-se
 ## Code style
 
 - Python 3.12, type hints, pydantic models at API boundaries, pydantic-settings for config.
+- Every new or modified Python file starts with a concise module docstring stating the file's purpose; inline comments explain non-obvious logic only.
 - Small functions, sanitized error responses (no upstream error text to clients), log details server-side.
 - Tests: pytest under `tests/{unit,integration,evaluation}`; aim 80% on new packages.
 - Commits: conventional (`feat:`, `fix:`, `docs:`, ...).

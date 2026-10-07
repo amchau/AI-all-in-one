@@ -16,7 +16,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: claims-service
-          image: localhost/claims-service:stage4.0
+          image: localhost/claims-service:stage6.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
