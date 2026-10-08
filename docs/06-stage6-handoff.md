@@ -1,7 +1,7 @@
 # Stage 6 Handoff
 
-Updated: 2026-10-07
-Status: Mandatory retrieval is implemented; Stage 6 `top_k=8` retrieved the water clarification, and the stricter deterministic answer guard passed one live pipe-failure smoke. Flood-extension coverage and broader answer-quality review remain open.
+Updated: 2026-10-08
+Status: **Done for the user-reviewed local synthetic scope.** Mandatory retrieval, the deterministic answer guard, and JSON-mode final response were exercised on pipe-failure and CL-125 flood scenarios. This is not a general model-quality or production-readiness claim. The kind cluster was recovered with preserved PVC data.
 
 ## Current behavior
 
@@ -42,58 +42,21 @@ an effective date but no expiry date. It left `unresolved_questions` empty despi
 and cause/duration evidence. See [the detailed integration report](eval/stage6-hybrid-ai-report.md)
 and [the Stage 2 golden set](../tests/evaluation/golden.yaml).
 
-Acceptance status: mandatory retrieval, status handling, trace correlation, and citation-to-returned-
-source identity pass. Retrieval coverage and answer completeness are **partial** for this smoke.
-Do not mark Stage 6 answer-quality acceptance complete yet.
+Acceptance status: user reviewed and accepted the pipe-failure and CL-125 flood schedule-uncertainty
+scenarios on 2026-10-08 for the local synthetic scope. Retrieval/status handling, trace correlation,
+returned-source identity, JSON-mode final output, schedule uncertainty, and separate risk advice were
+verified for these scenarios. This acceptance is limited to the tested fixtures and is not a broad
+semantic-faithfulness or production-readiness claim.
 
-## Next steps
+## Closeout and Follow-Ups
 
-1. **Regression added, retrieval still mocked:** the fixed pipe-failure route test asserts the water
-   clarification and flood extension source identities propagate to the agent, verifies the summary
-   cites the water source, and keeps schedule/cause/duration questions unresolved. Agent prompt rules
-   now explicitly forbid inferring schedule-dependent applicability or policy-in-force from an
-   effective date alone. These tests do not prove that live ranking retrieves the endorsements or
-   that a model follows the prompt.
-2. **Live ranking diagnosis completed (2026-10-07):** trace
-   `dd6a3694ea907d170e60b9c592dfaf30` shows both endorsements in the 20 Qdrant candidates. After
-   reranking, water-clarification chunks occupied positions 7, 8, 10, and 14; flood-extension
-   chunks occupied positions 12 and 19. The final five were base policy, three water-procedure
-   chunks, and regulation. This isolates the observed missing-endorsement behavior to rerank ordering
-   plus the Stage 6 `top_k=5` cutoff, not date eligibility or absent index chunks. The trace has
-   bounded document IDs, not chunk text.
-3. **`top_k=8` smoke and answer review (2026-10-07):** the user reported HTTP 200, retrieved policy
-   evidence, two water-endorsement chunks in the returned eight, three tool calls, and available
-   risk. The answer incorrectly asserted the repair-cost schedule content and coverage under the
-   escape-of-water clause, despite missing schedule evidence. It did ask schedule, expiry, and
-   cause/duration questions. The response trace `b97fe7dbe3fbf9fb59b17bf6281bf851` matches the
-   collector trace and confirms top-k 8, 32 candidates, eight returned chunks, and successful
-   agent/risk spans.
-4. A deterministic guard forces expiry, schedule, and cause/duration questions from typed source
-   gaps and abstains on detected unsupported policy-period, schedule, coverage, or endorsement
-   claims. It passed one live pipe-failure smoke: response and collector trace IDs matched, the
-   investigation abstained with empty summary/findings, and risk remained available.
-5. **Flood probe (2026-10-07):** one synthetic request placed the flood extension in rerank positions
-   1 and 2 and in the returned top eight, confirming query-specific retrieval. The request then
-   returned HTTP 502 during agent execution (`AgentDependencyError`); no answer was produced and no
-   retry was made. It used `CL-123` but a flood narrative that conflicts with the fixture's reported
-   pipe failure, so treat it as a retrieval probe only. Trace:
-   `93d95eacf204ae853dc11b50bbefd5ff`. Gateway logs show Groq `tool_use_failed`: malformed
-   `submit_final_answer` arguments on agent turn 3.
-6. A local combined-route regression now feeds the flood endorsement to a fake agent that asserts
-   applicability; the API returns `insufficient_evidence` and requires the schedule question. Claims
-   API tests: 41 passed; full Python 3.12 backend: 320 passed, 2 skipped.
-7. Add live answer-level flood-extension applicability verification with a coherent synthetic
-   fixture and stable agent dependency. The schedule question must remain unresolved unless
-   schedule evidence is present. The flood probe authorization has been used; seek explicit
-   approval before another provider-backed request. Do not claim real-world risk quality or
-   production readiness.
-8. Groq's malformed final tool-call path is replaced locally with tool-free JSON-object mode on the
-   final turn; the same typed payload and source-ID validation remain. One live check reached JSON
-   mode successfully, but final turn 4 hit the 30-second read timeout. The final JSON request now has
-   a 60-second bounded timeout; intermediate calls remain at 30 seconds, with no retry. Claims/API
-   tests pass (41), full backend passes (320 passed, 2 skipped). The 60-second timeout image is
-   deployed, but no successful live response has verified it. Stage 6 remains open; seek approval
-   before another provider-backed check.
+- User reviewed and accepted the tested local synthetic pipe-failure and CL-125 flood scenarios on
+  2026-10-08. The flood answer leaves applicability unresolved because schedule evidence is absent.
+- Retain the historical failures below for diagnosis. They were addressed for the reviewed scope by
+  `top_k=8`, the deterministic answer guard, JSON-object final mode, and the 60-second final-turn
+  timeout; no automatic retries were added.
+- Broader semantic reliability, additional flood variants, real claims, and production readiness are
+  outside this acceptance. Treat any expansion as a new review/evaluation scope.
 
 ## Verified checks
 
@@ -122,3 +85,23 @@ Do not mark Stage 6 answer-quality acceptance complete yet.
    during agent execution; Groq rejected malformed `submit_final_answer` arguments with
    `tool_use_failed` on turn 3. No answer or policy-applicability result was available. No retry was
    made. Local route regression plus full backend suite passed (320 passed, 2 skipped).
+- Cluster recovery (2026-10-08): kind v0.33.0 had no cluster; the detached Podman volume labeled
+   `ai-stage1-control-plane` was preserved. Its four PVC directories were archived to
+   `~/.local/state/ai-all-in-one/recovery/stage6-pvcs-2026-10-08.tar.gz` (SHA-256
+   `6c0144a2cb3c8d3272705e963e54a1130b8d50c1c653c2812e0a6ffb4b73bb24`), extracted separately, and
+   mounted into the new control-plane node using local Retain PVs. All workloads are ready; Qdrant
+   reports 44 points, Postgres registry has 8 documents, and `rag-ingest` remains suspended. The
+   original 11 GB node volume is untouched. No provider-backed smoke was run during recovery.
+- Flood fixture readiness (2026-10-08): `CL-125` and its fixed risk vector are served by the recovered
+   claims service; local route regression proves schedule uncertainty. No provider-backed flood answer
+   was requested during this fixture work.
+- CL-125 live flood check (2026-10-08): HTTP 200, retrieved flood-extension evidence, available risk,
+   and an explicit unresolved schedule-applicability question. Response trace
+   `c0a716677588af2a910311f11d6becc1` matches collector spans; four JSON-mode agent turns succeeded.
+   No retry was made.
+- JSON-mode live verification (2026-10-08): one synthetic `CL-123` pipe-failure request returned
+   HTTP 200, retrieved policy evidence, `investigation.status=insufficient_evidence`, empty
+   summary/findings, required schedule/expiry/cause-duration questions, and available risk. Response
+   trace `23bbdc99d267ebeddabcdea57c9cb48f` matches the collector; all four agent turns reported
+   `llm.status=ok`, with two tool calls and ten total sources. No retry was made. This verifies JSON
+   final output and the guard on one synthetic pipe-failure scenario only.

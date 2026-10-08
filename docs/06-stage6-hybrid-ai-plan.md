@@ -1,6 +1,6 @@
 # Stage 6 - Hybrid Claims Investigation
 
-Status: **IN PROGRESS**
+Status: **DONE for the user-reviewed local synthetic scope (2026-10-08)**
 Pattern: Agent + ML + RAG orchestration
 Builds on: Stage 2 hybrid RAG, Stage 4 bounded claims agent, Stage 5 synthetic referral model
 
@@ -186,18 +186,18 @@ Stage 5's existing label rubric and model remain unchanged.
 
 1. **Contracts and decision — complete:** add request/response schemas and accepted ADR-013. Keep
    Stage 3/4 contracts unchanged.
-2. **Synthetic feature boundary — in progress:** add fixture-owned risk features, typed lookup
+2. **Synthetic feature boundary — complete:** add fixture-owned risk features, typed lookup
    endpoint, and package the shared feature schema in the claims-service image.
-3. **API orchestration — in progress:** configure the internal risk-service URL, add a validated
+3. **API orchestration — complete:** configure the internal risk-service URL, add a validated
    risk adapter and combined endpoint, and forward optional `guidance_as_of` into the RAG evidence
    adapter.
-4. **Frontend — in progress:** switch to the combined request/response, make claim service data
+4. **Frontend — complete:** switch to the combined request/response, make claim service data
    authoritative for policy/loss date, display source-linked findings and policy excerpts, and
    render available/triage/unavailable risk states separately.
-5. **Tests/evaluation — in progress:** cover fixture schema/ranges, successful and failed risk
+5. **Tests/evaluation — complete for approved synthetic scope:** cover fixture schema/ranges, successful and failed risk
    calls, source separation, guidance-date handling, UI partial response, and desktop/mobile
    overflow. Add a report with actual measurements and limitations.
-6. **Deployment/closeout — pending:** build/load pinned Stage 6 API and claims-service images,
+6. **Deployment/closeout — complete:** build/load pinned Stage 6 API and claims-service images,
    verify local rollout and traces, then update project handoff docs with actual results.
 
 ## 6. Acceptance criteria
@@ -254,7 +254,8 @@ Stage 5's existing label rubric and model remain unchanged.
   `claims.risk_advisory`; no raw features or labels appeared in inspected spans. The model-selected
   flow did not call optional RAG evidence in this request. This is not a live Stage 6 RAG citation
   check or a model-quality claim. Full results and limitations: [Stage 6 integration report](eval/stage6-hybrid-ai-report.md).
-- Stage 6 remains in progress pending user review; no real-world quality or production-readiness
+- The user reviewed and accepted Stage 6 on 2026-10-08 for the local synthetic pipe-failure and
+  CL-125 flood scenarios. No general answer-quality, real-world model-quality, or production-readiness
   claim is made.
 - Decision amendment (2026-10-07): user selected deterministic retrieval for every combined
   investigation. `RagQueryService` now supports retrieval-only mode; the combined API invokes it
@@ -273,9 +274,8 @@ Stage 5's existing label rubric and model remain unchanged.
   clarification and flood-extension source identities, a cited water-clarification summary, and
   unresolved schedule/cause/duration questions. The agent prompt explicitly guards against
   schedule-applicability and missing-expiry inference. Claims-agent/API tests: 36 passed; Python
-  3.12 backend unit/integration suite: 315 passed, 2 skipped. The route test mocks retrieval, so
-  live ranking recall and model adherence remain unverified; Stage 6 answer-quality acceptance stays
-  open.
+  3.12 backend unit/integration suite: 315 passed, 2 skipped. The route test mocked retrieval;
+  subsequent live ranking and answer checks below cover the user-reviewed synthetic scenarios only.
 - Ranked-document diagnostic (2026-10-07): trace `dd6a3694ea907d170e60b9c592dfaf30` confirmed
   both endorsements entered the 20 hybrid candidates but ranked below the returned top five after
   TEI reranking. The updated API image rolled out; the single approved follow-up request then failed
@@ -295,12 +295,22 @@ Stage 5's existing label rubric and model remain unchanged.
   returned `tool_use_failed` for malformed final tool arguments on turn 3, and the narrative
   conflicted with the fixture. Added local combined-route regression for flood-extension
   applicability without schedule evidence. Claims API tests: 41; full backend: 320 passed, 2
-  skipped. Retrieval and local guard are verified; coherent live flood answer remains open. See the
-  [Stage 6 report](eval/stage6-hybrid-ai-report.md).
+  skipped. Retrieval and local guard were verified; the coherent live flood answer check is recorded
+  below and in the [Stage 6 report](eval/stage6-hybrid-ai-report.md).
 - Final response transport fix (2026-10-07): Groq rejected a truncated `submit_final_answer` call
   as malformed tool JSON. The final agent turn now requests `response_format: {"type":"json_object"}`
   with no tools and locally validates the same `AgentFinalPayload` and source IDs. Claims/API tests
   passed (41); full backend passed (320 passed, 2 skipped). One live check no longer hit the Groq
   tool parser, but final turn 4 exceeded the 30-second read timeout. The final JSON request now has
-  a 60-second bound; intermediate requests remain 30 seconds and do not retry. The timeout follow-up
-  is deployed locally pending a separately approved live check.
+  a 60-second bound; intermediate requests remain 30 seconds and do not retry. One post-recovery
+  pipe-failure smoke completed with all four model turns successful (trace
+  `23bbdc99d267ebeddabcdea57c9cb48f`) and returned `insufficient_evidence`. The later CL-125 flood
+  answer check is recorded below and in the [Stage 6 report](eval/stage6-hybrid-ai-report.md).
+- Coherent flood fixture (2026-10-08): added `CL-125` for HOME-002 surface-water runoff with a
+  fixed Stage 5 vector and no schedule evidence. The claims-service image is deployed; a local
+  combined-route regression confirms unsupported flood-extension applicability is withheld and a
+  schedule question is added. Claims-service/API focused tests pass; full backend remains 320
+  passed, 2 skipped. The live CL-125 flood check completed successfully; the answer cited flood
+  evidence and explicitly left applicability unresolved without schedule data (trace
+  `c0a716677588af2a910311f11d6becc1`). The user reviewed and accepted this outcome for the local
+  synthetic scope; this is not a general answer-quality or production-readiness claim.

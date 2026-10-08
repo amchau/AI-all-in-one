@@ -10,7 +10,7 @@ Current progress:
 - Stage 3 Claims Copilot is complete. API/UI are deployed locally; automated checks and a live cited brief with collector trace pass.
 - Stage 4 bounded claims tool-calling workflow is done for the local synthetic learning scope; API and synthetic claims-service are deployed, live RAG evidence and collector spans were exercised, and unit/integration checks pass. The reviewed evaluation documents model-quality limitations and is not a production-readiness claim. See the [Stage 4 evaluation report](docs/eval/stage4-claims-agent-report.md) and [handoff](docs/04-stage4-handoff.md).
 - Stage 5 claims risk model is done for the approved local synthetic prototype. It is advisory, routes uncertain cases to handler triage, and is not a fraud or coverage decision or a production-readiness claim. See the [Stage 5 evaluation report](docs/eval/stage5-risk-model-report.md) and [plan](docs/05-stage5-claims-risk-model-plan.md).
-- Stage 6 hybrid claims investigation's October 7 mandatory-retrieval amendment is deployed and live-trace verified, pending user review. The combined endpoint retrieves policy evidence before the agent and keeps Stage 5 referral separate. See the [Stage 6 integration report](docs/eval/stage6-hybrid-ai-report.md), [plan](docs/06-stage6-hybrid-ai-plan.md), and [ADR-013](docs/adr/ADR-013-stage6-hybrid-orchestration.md).
+- Stage 6 hybrid claims investigation is done for the user-reviewed local synthetic scope (2026-10-08): pipe and flood scenarios verified retrieval, schedule uncertainty, JSON-mode final output, separate risk advice, and correlated traces. This is not a general answer-quality or production-readiness claim. See the [Stage 6 integration report](docs/eval/stage6-hybrid-ai-report.md), [handoff](docs/06-stage6-handoff.md), [plan](docs/06-stage6-hybrid-ai-plan.md), and [ADR-013](docs/adr/ADR-013-stage6-hybrid-orchestration.md).
 - See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md), and [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md).
 
 ## Stack
@@ -275,6 +275,6 @@ verification and limitations.
 - Stage 3: done - API/UI deployed; unit/browser checks pass; live cited brief and collector trace verified
 - Stage 4: done for the reviewed local synthetic learning scope; see [the evaluation report](docs/eval/stage4-claims-agent-report.md) for limitations, including incomplete payment/fraud source coverage in the saved all-domains case
 - Stage 5: done for the approved local synthetic model scope; not real-world risk quality
-- Stage 6: implemented/deployed locally; pending user review; see [the integration report](docs/eval/stage6-hybrid-ai-report.md)
+- Stage 6: done for the reviewed local synthetic scope; limitations remain; see [the integration report](docs/eval/stage6-hybrid-ai-report.md)
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). AI assistant context: [AGENTS.md](AGENTS.md).

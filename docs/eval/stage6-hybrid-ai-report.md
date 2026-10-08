@@ -1,8 +1,9 @@
 # Stage 6 Hybrid Claims Investigation: Integration Report
 
-Date: 2026-10-06
-Status: Mandatory-retrieval amendment deployed and live-trace verified 2026-10-07. Synthetic scope
-only; pending user review.
+Date: 2026-10-06; closeout updated 2026-10-08
+Status: **Done for the user-reviewed local synthetic scope (2026-10-08).** Pipe-failure and CL-125
+flood schedule-uncertainty answers were reviewed and accepted. This does not establish general answer
+quality, real-claims performance, or production readiness.
 
 ## Scope
 
@@ -112,7 +113,7 @@ Added bounded ordered document-ID attributes to `rag.search` (`rag.candidate_doc
 
 One approved request used claim `CL-123`, narrative "A domestic pipe failed overnight and water damaged the home; duration is unknown.", and guidance date `2026-01-01`. Trace `dd6a3694ea907d170e60b9c592dfaf30` showed 20 hybrid candidates and 20 reranked chunks. Both expected endorsements entered the candidate set: water-clarification chunks appeared at candidate ranks 3, 7, 11, and 13; flood-extension chunks at 8 and 17. After reranking, water chunks ranked 7, 8, 10, and 14; flood chunks ranked 12 and 19. The returned top five were the base policy, three water-procedure chunks, and the regulation. The observed omission is therefore rerank ordering plus the combined route's `top_k=5` cutoff, not source eligibility or absent indexed chunks.
 
-This request returned HTTP 502 because LiteLLM rejected the agent chat-completion request with HTTP 400 on model turn 4. No retry was made. It diagnoses retrieval ranking only; it does not verify a completed answer or whether the updated prompt rules are followed. Stage 6 answer-quality acceptance remains open. The next implementation decision is a bounded Stage 6 evidence-selection policy that preserves relevant endorsement chunks while respecting the agent's maximum of eight initial sources, followed by a regression and a separately approved smoke.
+This request returned HTTP 502 because LiteLLM rejected the agent chat-completion request with HTTP 400 on model turn 4. No retry was made. It diagnoses retrieval ranking only; it does not verify a completed answer or whether the updated prompt rules are followed. At that time, answer review remained open. The bounded retrieval change, regression, and separately approved live checks are recorded below.
 
 ## `top_k=8` Pipe-Failure Answer Review (2026-10-07)
 
@@ -143,6 +144,18 @@ A route-level regression now supplies the retrieved flood extension to a fake ag
 The agent no longer forces Groq to serialize final output as a `submit_final_answer` tool call. The final turn supplies no tools and requests `response_format: {"type":"json_object"}`. The returned content is still parsed as `AgentFinalPayload`, then validated against the returned source IDs; malformed JSON or unexpected final tool calls fail closed. The focused claims/API suite passed (41 tests), and the full Python 3.12 backend suite passed (320 passed, 2 skipped).
 
 One authorized live check against this JSON mode returned HTTP 502 after final model turn 4 exceeded the existing 30-second read timeout. Earlier agent turns succeeded; the malformed tool-call rejection did not recur. The final JSON request now uses a bounded 60-second timeout, while intermediate turns remain at 30 seconds and automatic retries remain disabled. This timeout follow-up has been deployed locally but has not produced a successful provider-backed response.
+
+## Local Cluster Recovery (2026-10-08)
+
+The former kind cluster was absent. The detached Podman control-plane volume (`8f5126cfaf7acdb30f6004f91ad9297ead5d31654ac3545e7dfc94d51e381588`) was preserved without reuse or modification. Its four `local-path-provisioner` PVC directories were archived separately (949 MB compressed; SHA-256 `6c0144a2cb3c8d3272705e963e54a1130b8d50c1c653c2812e0a6ffb4b73bb24`), extracted to a recovery directory, and mounted into a newly created `ai-stage1` control-plane node through a kind `extraMounts` entry. Four static `Retain` PVs were prebound to the existing `ai-platform` claims.
+
+All Stage 6 workloads are Ready. The restored Qdrant collection `insurance_docs` is green with 44 points; Postgres reports 8 `rag.documents` rows; all four PVCs are Bound; and `rag-ingest` remains Suspended. The original volume and recovery archive remain untouched. No provider-backed request was made during the recovery procedure.
+
+## Post-Recovery JSON-Mode Verification (2026-10-08)
+
+One authorized synthetic `CL-123` pipe-failure request completed through the recovered cluster. It returned HTTP 200, `policy_evidence_status=retrieved`, and `investigation.status=insufficient_evidence` with empty summary/findings. Unresolved questions included schedule applicability, expiry/lapse, cause/duration, leak duration, and repair cost; risk status was available.
+
+Response trace `23bbdc99d267ebeddabcdea57c9cb48f` matches the collector. All four agent turns reported `llm.status=ok`; the run used two tool calls and ten total sources. The JSON final-response path and deterministic guard are verified for this one pipe-failure scenario. No retry was made. A coherent flood-extension answer/applicability scenario remains open.
 An initial redeployment attempt could not reach the kind API server at `10.129.24.10:443`; access
 later recovered. On 2026-10-07, the user reported a combined response with
 `policy_evidence_status=retrieved` and trace `0826761b079e1dfc1e0de72aadca0b8d`. Collector
@@ -153,3 +166,22 @@ contains `claims.hybrid_investigation` with `rag.policy_evidence_status=retrieve
 calls. No `rag.generate` span is expected because RAG runs in retrieval-only mode; the agent
 generates the final brief. The October 6 trace above belongs to the prior optional-RAG behavior and
 is not used as evidence for this amendment.
+
+## Coherent Flood Fixture (2026-10-08)
+
+Added synthetic claim `CL-125` for HOME-002 surface-water runoff on loss date 2025-03-01, with a distinct synthetic customer and fixed risk-feature vector. The claim has no schedule data. Claims-service contract tests validate the claim/risk boundary; a combined-route fake-agent regression asserts flood-extension applicability and verifies the API returns `insufficient_evidence` with the schedule question. The claims-service image is deployed, and both claim/risk-feature GETs returned HTTP 200. The full backend suite passed (320 passed, 2 skipped).
+
+One approved live CL-125 request returned HTTP 200 with `policy_evidence_status=retrieved`; flood-extension chunks were in the returned top eight and the unresolved questions explicitly state that schedule evidence is missing, so flood/contents applicability cannot be confirmed. Risk was available. Response trace `c0a716677588af2a910311f11d6becc1` matches the collector; all four agent turns reported `llm.status=ok`. The user reviewed and accepted this answer for the local synthetic scope on 2026-10-08. It correctly leaves applicability unresolved without schedule data.
+
+## User Review and Stage 6 Closeout (2026-10-08)
+
+The user reviewed and accepted the live pipe-failure and CL-125 flood schedule-uncertainty outcomes
+for the approved local synthetic scope. The pipe response retrieved policy evidence and returned
+`insufficient_evidence` with empty summary/findings and required uncertainty questions. The flood
+response retrieved the flood extension and explicitly left applicability unresolved because schedule
+evidence was absent. Both responses had correlated collector traces, successful JSON-mode agent
+turns, and separate risk advice. The full Python 3.12 backend suite passed (320 passed, 2 skipped).
+
+This closes human review for those tested scenarios only. It is not a general semantic-faithfulness
+or answer-quality acceptance, validation against real claims, or production-readiness claim. Broader
+semantic reliability and additional scenarios require a separate evaluation scope.

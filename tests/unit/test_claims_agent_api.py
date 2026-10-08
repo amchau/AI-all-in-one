@@ -489,15 +489,15 @@ def test_hybrid_flood_route_abstains_when_extension_schedule_is_missing(
 
     def service_response(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
-        assert request.url.path == "/v1/claims/CL-123"
+        assert request.url.path == "/v1/claims/CL-125"
         return httpx.Response(
             200,
             json={
-                "claim_id": "CL-123",
+                "claim_id": "CL-125",
                 "policy_id": "HOME-002",
-                "customer_id": "CUST-123",
+                "customer_id": "CUST-125",
                 "loss_date": "2025-03-01",
-                "reported_event": "Water entered after a reported pipe failure.",
+                "reported_event": "Surface-water runoff entered the ground floor.",
                 "status": "under_review",
             },
         )
@@ -570,15 +570,18 @@ def test_hybrid_flood_route_abstains_when_extension_schedule_is_missing(
     response = api_client.post(
         "/v1/claims/hybrid-investigations",
         json={
-            "claim_id": "CL-123",
-            "narrative": "Surface-water runoff entered the home and caused direct flood damage.",
+            "claim_id": "CL-125",
+            "narrative": "Surface-water runoff accumulated outside and entered the ground floor.",
             "guidance_as_of": "2026-01-01",
         },
     )
 
     assert response.status_code == 200
+    assert observed["request"].policy_id == "HOME-002"
+    assert observed["request"].loss_date == date(2025, 3, 1)
     assert observed["request"].top_k == 8
     body = response.json()
+    assert body["claim_id"] == "CL-125"
     assert body["policy_evidence_status"] == "retrieved"
     assert body["investigation"]["status"] == "insufficient_evidence"
     assert body["investigation"]["summary"] == ""
