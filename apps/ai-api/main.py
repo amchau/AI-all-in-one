@@ -11,10 +11,11 @@ from contextlib import asynccontextmanager
 from datetime import date
 import logging
 from typing import Any, Literal
+from uuid import UUID
 
 import httpx
 import psycopg
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from opentelemetry import trace
@@ -31,17 +32,21 @@ from qdrant_client import QdrantClient
 from agents.claims.models import (
     AgentInvestigationInput,
     AgentInvestigationOutput,
+    ClaimsWorkflowCreateInput,
+    ClaimsWorkflowDispositionInput,
+    ClaimsWorkflowResumeInput,
+    ClaimsWorkflowStatusOutput,
+    HybridClaimsInvestigationInput,
+    HybridClaimsInvestigationOutput,
+    HybridRiskAssessment,
+)
+from agents.claims.models import (
     InvestigationSource,
 )
 from agents.claims.runner import (
     AgentDependencyError,
     AgentOutputError,
     ClaimsAgent,
-)
-from agents.claims.models import (
-    HybridClaimsInvestigationInput,
-    HybridClaimsInvestigationOutput,
-    HybridRiskAssessment,
 )
 from agents.claims.risk import assess_claim_risk
 from rag.ingestion.embed import LiteLLMEmbedder
@@ -60,6 +65,8 @@ from rag.retrieval.sources import (
     AmbiguousBasePolicyError,
     NoApplicableBasePolicyError,
 )
+from workflow_store import WorkflowConflict, WorkflowNotFound, WorkflowStore
+from workflow_worker import WorkflowWorker
 
 
 class Settings(BaseSettings):
@@ -80,6 +87,7 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
     postgres_db: str = "platform"
     postgres_query_password: str = Field(default="", repr=False)
+    postgres_workflow_password: str = Field(default="", repr=False)
     qdrant_url: str = "http://qdrant.ai-platform.svc.cluster.local:6333"
     embedding_model: str = "embed-small"
     sparse_model: str = "Qdrant/bm25"
@@ -207,12 +215,38 @@ class RagQueryResponse(BaseModel):
 async def lifespan(_: FastAPI):
     required = {
         "postgres_query_password": settings.postgres_query_password,
+        "postgres_workflow_password": settings.postgres_workflow_password,
         "litellm_master_key": settings.litellm_master_key,
     }
     missing = [key for key, value in required.items() if not value]
     if missing:
         raise RuntimeError(f"Missing required settings: {', '.join(missing)}")
-    yield
+    store = create_workflow_store()
+    worker = WorkflowWorker(store, run_hybrid_investigation)
+    worker.start()
+    app.state.workflow_store = store
+    try:
+        yield
+    finally:
+        worker.stop()
+
+
+def create_workflow_store() -> WorkflowStore:
+    dsn = psycopg.conninfo.make_conninfo(
+        host=settings.postgres_host,
+        port=settings.postgres_port,
+        dbname=settings.postgres_db,
+        user="claims_workflow",
+        password=settings.postgres_workflow_password,
+        connect_timeout=3,
+    )
+    return WorkflowStore(dsn)
+
+
+def run_hybrid_investigation(request_payload: dict[str, Any]) -> dict[str, Any]:
+    request = HybridClaimsInvestigationInput.model_validate(request_payload)
+    result = investigate_claim_with_hybrid_ai(request)
+    return result.model_dump(mode="json")
 
 
 def sanitize_server_request_span(span: Any, scope: dict[str, Any]) -> None:
@@ -795,8 +829,12 @@ def investigate_claim_with_tools(
                 result = agent.investigate(request)
         except AgentDependencyError as error:
             raise HTTPException(
-                status_code=502,
-                detail="Claims agent dependency failed",
+                status_code=error.status_code,
+                detail=(
+                    "Claims agent rate limited"
+                    if error.status_code == 429
+                    else "Claims agent dependency failed"
+                ),
             ) from error
         except AgentOutputError as error:
             raise HTTPException(
@@ -870,8 +908,12 @@ def investigate_claim_with_hybrid_ai(
             raise
         except AgentDependencyError as error:
             raise HTTPException(
-                status_code=502,
-                detail="Claims investigation dependency failed",
+                status_code=error.status_code,
+                detail=(
+                    "Claims investigation rate limited"
+                    if error.status_code == 429
+                    else "Claims investigation dependency failed"
+                ),
             ) from error
         except AgentOutputError as error:
             raise HTTPException(
@@ -902,6 +944,119 @@ def investigate_claim_with_hybrid_ai(
             latency_ms=round((time.perf_counter() - started) * 1000),
             trace_id=trace_id,
         )
+
+
+@app.post(
+    "/v1/claims/workflows",
+    response_model=ClaimsWorkflowStatusOutput,
+    status_code=202,
+)
+def create_claim_workflow(
+    request: ClaimsWorkflowCreateInput,
+    response: Response,
+) -> ClaimsWorkflowStatusOutput:
+    with tracer.start_as_current_span("claims.workflow_create") as span:
+        try:
+            workflow = app.state.workflow_store.create_workflow(
+                request.model_dump(mode="json")
+            )
+        except psycopg.Error as error:
+            logger.error("workflow creation failed error_type=%s", type(error).__name__)
+            raise HTTPException(status_code=503, detail="Workflow service unavailable") from error
+        response.headers["Location"] = f"/v1/claims/workflows/{workflow['workflow_id']}"
+        span.set_attribute("workflow.state", "created")
+        span.set_attribute("workflow.id", str(workflow["workflow_id"]))
+    return workflow
+
+
+@app.get(
+    "/v1/claims/workflows/{workflow_id}",
+    response_model=ClaimsWorkflowStatusOutput,
+)
+def get_claim_workflow(
+    workflow_id: UUID,
+) -> ClaimsWorkflowStatusOutput:
+    workflow_id = str(workflow_id)
+    with tracer.start_as_current_span("claims.workflow_read") as span:
+        try:
+            workflow = app.state.workflow_store.get_workflow(workflow_id)
+        except WorkflowNotFound as error:
+            raise HTTPException(status_code=404, detail="Workflow not found") from error
+        except psycopg.Error as error:
+            logger.error("workflow lookup failed error_type=%s", type(error).__name__)
+            raise HTTPException(status_code=503, detail="Workflow service unavailable") from error
+        span.set_attribute("workflow.id", workflow_id)
+        span.set_attribute("workflow.state", workflow["state"])
+        return workflow
+
+
+@app.post(
+    "/v1/claims/workflows/{workflow_id}/dispositions",
+    response_model=ClaimsWorkflowStatusOutput,
+)
+def submit_claim_workflow_disposition(
+    request: ClaimsWorkflowDispositionInput,
+    workflow_id: UUID,
+    idempotency_key: str = Header(
+        alias="Idempotency-Key",
+        min_length=16,
+        max_length=128,
+    ),
+) -> ClaimsWorkflowStatusOutput:
+    workflow_id = str(workflow_id)
+    with tracer.start_as_current_span("claims.workflow_disposition") as span:
+        try:
+            app.state.workflow_store.submit_disposition(
+                workflow_id,
+                **request.model_dump(),
+                idempotency_key=idempotency_key,
+            )
+            workflow = app.state.workflow_store.get_workflow(workflow_id)
+        except WorkflowNotFound as error:
+            raise HTTPException(status_code=404, detail="Workflow not found") from error
+        except WorkflowConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except psycopg.Error as error:
+            logger.error("workflow decision failed error_type=%s", type(error).__name__)
+            raise HTTPException(status_code=503, detail="Workflow service unavailable") from error
+        span.set_attribute("workflow.id", workflow_id)
+        span.set_attribute("workflow.disposition", request.disposition)
+        span.set_attribute("workflow.state", workflow["state"])
+        return workflow
+
+
+@app.post(
+    "/v1/claims/workflows/{workflow_id}/resume",
+    response_model=ClaimsWorkflowStatusOutput,
+)
+def resume_claim_workflow(
+    request: ClaimsWorkflowResumeInput,
+    workflow_id: UUID,
+    idempotency_key: str = Header(
+        alias="Idempotency-Key",
+        min_length=16,
+        max_length=128,
+    ),
+) -> ClaimsWorkflowStatusOutput:
+    workflow_id = str(workflow_id)
+    with tracer.start_as_current_span("claims.workflow_resume") as span:
+        try:
+            app.state.workflow_store.resume_for_information(
+                workflow_id,
+                **request.model_dump(),
+                idempotency_key=idempotency_key,
+            )
+            workflow = app.state.workflow_store.get_workflow(workflow_id)
+        except WorkflowNotFound as error:
+            raise HTTPException(status_code=404, detail="Workflow not found") from error
+        except WorkflowConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except psycopg.Error as error:
+            logger.error("workflow resume failed error_type=%s", type(error).__name__)
+            raise HTTPException(status_code=503, detail="Workflow service unavailable") from error
+        span.set_attribute("workflow.id", workflow_id)
+        span.set_attribute("workflow.state", workflow["state"])
+        return workflow
 
 
 @app.post(

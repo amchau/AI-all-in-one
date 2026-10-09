@@ -29,7 +29,21 @@ from rag.retrieval.models import (
 @pytest.fixture
 def api_client(monkeypatch):
     monkeypatch.setattr(main.settings, "postgres_query_password", "test-db-password")
+    monkeypatch.setattr(main.settings, "postgres_workflow_password", "test-workflow-password")
     monkeypatch.setattr(main.settings, "litellm_master_key", "test-litellm-key")
+
+    class NoOpWorkflowWorker:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+    monkeypatch.setattr(main, "create_workflow_store", lambda: object())
+    monkeypatch.setattr(main, "WorkflowWorker", NoOpWorkflowWorker)
     with TestClient(main.app) as client:
         yield client
 

@@ -1,6 +1,6 @@
 # Stage 7 - Human Approval Workflow
 
-Status: **Draft for review; not approved; no implementation started**
+Status: **Done for the approved local synthetic scope; live Stage 6 workflow smoke deferred**
 Pattern: Governed workflow with explicit human checkpoints
 Builds on: Stage 4 bounded read-only claims agent; Stage 6 hybrid investigation
 
@@ -8,7 +8,7 @@ Builds on: Stage 4 bounded read-only claims agent; Stage 6 hybrid investigation
 
 Make an investigation pause for an explicit human disposition, persist the workflow state, and resume only from a valid transition. An approval means permission to continue the workflow; it is not a coverage decision, claim approval, denial, payment authorization, or fraud determination.
 
-Stage 7 may begin with a deterministic fake Stage 6 adapter while Stage 6 remains open. Do not make Stage 7 acceptance depend on unverified Stage 6 answer quality. Connect the live Stage 6 endpoint only after its final JSON response path and flood schedule handling are verified.
+Stage 6 was accepted on 2026-10-08 for the reviewed local synthetic scope. Stage 7 may call its live endpoint in local end-to-end verification and must use a deterministic fake for isolated tests and dependency-failure cases. Do not make Stage 7 acceptance imply broad Stage 6 answer quality or production readiness.
 
 ## 2. Proposed user journey
 
@@ -26,7 +26,7 @@ The meaning of each disposition is intentionally undecided pending user review. 
 - Model explicit states such as `created`, `investigating`, `awaiting_human_review`, `needs_more_information`, `completed`, `failed`, and `cancelled`.
 - Validate allowed state transitions server-side; model output cannot approve, reject, resume, or mutate a workflow.
 - Make decision submission idempotent and reject duplicate or stale transitions safely.
-- Persist a minimal audit history: workflow ID, state transition, disposition, timestamp, actor identifier, and references to investigation/trace IDs. Do not persist narratives or full evidence payloads unless separately approved.
+- Persist minimal audit history: workflow ID, state transition, disposition, timestamp, actor identifier, and references to investigation/trace IDs. Keep the request narrative only in the workflow payload while it can resume; clear it on completed, failed, or cancelled states. Persist a compact review result with summaries, findings, unresolved questions, source identifiers, bounded risk advice, and trace ID; strip full source facts and evidence text.
 - Render pending review, resolved, failed, and unavailable states in the existing handler UI.
 - Trace workflow creation, wait/resume, decision submission, and downstream service calls without claim narrative, PII, secrets, or full evidence.
 
@@ -38,28 +38,27 @@ The meaning of each disposition is intentionally undecided pending user review. 
 - Specialist agents, broad Stage 6 answer-quality claims, or production deployment infrastructure.
 - Automatic retries of provider-backed actions.
 
-## 5. Architecture decision required
+## 5. Accepted architecture
 
-ADR-007 is proposed but undecided. Compare at least:
+ADR-007 selects an explicit Postgres-backed state machine for this local synthetic prototype. The bounded comparison and its limits are recorded there. Use an isolated `workflows` schema and a separate least-privilege write role; do not use the read-only RAG role. The API worker claims each queued workflow once, records an in-progress state before calling Stage 6, and does not automatically retry. On startup, an in-progress operation left by the previous single API worker is marked failed rather than replayed.
 
-| Option | Benefit | Cost / risk |
-|---|---|---|
-| Temporal workflow engine | Durable timers, waits, replay, and worker recovery | Additional local services and operational concepts; verify kind resource cost |
-| Explicit database-backed state machine | Small visible Python implementation and fewer services | Must implement locking, recovery, timers, and idempotency carefully |
-| In-process workflow | Lowest initial complexity | Not durable across pod restarts; unsuitable if restart-resume is an acceptance requirement |
+The following scope decisions are settled for planning:
 
-Temporal is a candidate, not an approved decision. User review must settle engine, persistence, disposition semantics, identity/actor representation in the synthetic scope, timeout/escalation behavior, and whether workflow creation invokes Stage 6 synchronously or asynchronously.
+- Workflow creation is asynchronous. A worker invokes Stage 6 once; automatic retries are out of scope.
+- `continue` moves the workflow to `completed`; `request_info` moves it to `needs_more_information` and requires an explicit human resume with a replacement narrative (5-1,000 characters); `stop` moves it to terminal `cancelled`.
+- One synthetic reviewer is sufficient. No second reviewer, timeout, or escalation is included.
+- A required `actor_id` is synthetic audit metadata only; it does not authenticate or authorize a person.
+- Keep audit history minimal and retain it until local database teardown. Do not put narratives in audit records, API responses, logs, or telemetry. Keep the current narrative in the workflow request payload only until a terminal state; explicit resume replaces it with the bounded updated narrative. Clear it on completion, failure, or cancellation. The UI persists only the workflow UUID in local storage. Persist only the compact Stage 6 review projection; do not persist full source facts or evidence text.
 
 ## 6. Implementation slices after approval
 
-1. Approve this plan and ADR-007 decision.
-2. Define typed workflow, state, disposition, and audit contracts, including idempotency behavior.
-3. Implement the selected durable workflow boundary and fake Stage 6 adapter.
-4. Add API operations for create, inspect, and submit disposition; validate all transitions server-side.
-5. Add handler UI for pending review, decision submission, history, and dependency failure.
-6. Add unit/integration tests for restart recovery, duplicate/stale decisions, illegal transitions, Stage 6 failure/partial results, and no model-controlled state changes.
-7. Add bounded OTEL spans and verify no narratives/full evidence enter telemetry.
-8. Deploy only to the local synthetic kind environment after plan approval; update roadmap and handoff with measured results.
+1. Define typed workflow, state, disposition, and audit contracts, including idempotency behavior.
+2. Implement the Postgres store, isolated credentials, and single background worker with a deterministic fake Stage 6 adapter for tests.
+3. Add API operations for create, inspect/history, disposition, and explicit request-info resume; validate all transitions server-side.
+4. Add handler UI for pending review, decision submission, request-info resume, history, and dependency failure.
+5. Add unit/integration tests for process restart recovery, competing decisions, duplicate/stale requests, illegal transitions, Stage 6 failure, and no model-controlled state changes.
+6. Add bounded OTEL spans and verify narratives/full evidence are excluded from audit and telemetry.
+7. Deploy only to the local synthetic kind environment; update roadmap and handoff with measured results.
 
 ## 7. Acceptance criteria proposal
 
@@ -71,13 +70,18 @@ Temporal is a candidate, not an approved decision. User review must settle engin
 - Audit history records transitions without claim narrative, PII, or full evidence.
 - UI clearly presents unresolved questions and distinguishes workflow disposition from claim outcome.
 - Unit/integration tests cover the state machine, persistence, API, and UI transitions; local rollout is verified.
-- Stage 6 live integration remains gated on its outstanding answer/timeout checks; Stage 7 results do not imply Stage 6 acceptance.
+- Use the live Stage 6 endpoint for local end-to-end verification and deterministic fakes for isolated tests. Stage 7 results do not imply broader Stage 6 answer quality or production readiness.
 
-## 8. Open questions for review
+## 8. Closeout status (2026-10-09)
 
-- Is Temporal required, or should a database-backed state machine be evaluated first?
-- What are the exact human dispositions and what may each disposition authorize next?
-- Is a second reviewer, escalation, timeout, or cancellation required?
-- What synthetic actor identity is sufficient for local authorization tests?
-- What minimal audit data and retention policy are acceptable?
-- Should the initial approved prototype use a fake Stage 6 adapter until Stage 6 live verification closes?
+Verified locally:
+
+- Force-replaced the API pod with a synthetic workflow in `investigating`. Startup recovery moved it to `failed` with `worker_interrupted`, incremented the version, cleared the request payload, and did not replay it. The synthetic probe and its audit row were removed after verification.
+- A unique narrative canary was absent from API logs, workflow audit events, and OTEL collector output. The probe's payload was cleared at failure.
+- The deployed frontend displayed the interrupted-workflow failure and no-retry message. Stage 7 store/API/worker tests passed (23 tests).
+- Fixed workflow status serialization for Postgres UUID values. The API now returns HTTP 200 and a string workflow ID for persisted workflows; the deployed UI can load and display the failed state.
+
+Deferred follow-up (not a Stage 8 dependency):
+
+- One browser-submitted `CL-125` workflow reached `stage6_dependency_failed`. No automatic retry was made. The failure state and UI behavior were verified, but a successful frontend-to-live-Stage-6 workflow through human disposition remains unverified. No upstream exception detail was captured, so the dependency failure cause is undetermined.
+- This live smoke is not a hard dependency for beginning Stage 8. Revisit it before claiming the full live workflow path is verified. If Stage 8 integrates specialist agents into the approval workflow, include that integration in Stage 8 acceptance checks.

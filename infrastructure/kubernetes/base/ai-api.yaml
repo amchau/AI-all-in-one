@@ -54,6 +54,11 @@ spec:
                 secretKeyRef:
                   name: rag-query-secrets
                   key: POSTGRES_PASSWORD
+            - name: POSTGRES_WORKFLOW_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claims-workflow-secrets
+                  key: POSTGRES_PASSWORD
             - name: QDRANT_URL
               value: http://qdrant.ai-platform.svc.cluster.local:6333
           resources:

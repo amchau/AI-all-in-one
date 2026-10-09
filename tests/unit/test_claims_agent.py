@@ -235,10 +235,12 @@ def test_agent_reserves_last_model_turn_for_final_response() -> None:
             model_turn += 1
             payload = json.loads(request.content)
             if model_turn < 4:
+                assert payload["max_completion_tokens"] == 1000
                 return model_tool_response(
                     tool_call("get_claim", {"claim_id": "CL-123"}, call_id=f"call-{model_turn}")
                 )
             assert "tools" not in payload
+            assert payload["max_completion_tokens"] == 2000
             assert payload["response_format"] == {"type": "json_object"}
             assert request.extensions["timeout"]["read"] == 60.0
             assert "one JSON object" in payload["messages"][0]["content"]
@@ -254,6 +256,15 @@ def test_agent_reserves_last_model_turn_for_final_response() -> None:
     assert model_turn == 4
     assert result.tool_calls == 3
     assert result.status == "answered"
+
+
+def test_agent_preserves_provider_rate_limit_status() -> None:
+    agent = make_agent(
+        lambda _request: httpx.Response(429, json={"error": {"message": "private"}})
+    )
+    with pytest.raises(AgentDependencyError) as error:
+        agent._chat([], [], turn=1)
+    assert error.value.status_code == 429
 
 
 def test_agent_ignores_premature_unstructured_answer_until_final_turn() -> None:

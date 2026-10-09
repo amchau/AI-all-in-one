@@ -26,7 +26,21 @@ from agents.claims.models import AgentInvestigationOutput
 @pytest.fixture
 def api_client(monkeypatch):
     monkeypatch.setattr(main.settings, "postgres_query_password", "test-db-password")
+    monkeypatch.setattr(main.settings, "postgres_workflow_password", "test-workflow-password")
     monkeypatch.setattr(main.settings, "litellm_master_key", "test-litellm-key")
+
+    class NoOpWorkflowWorker:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+    monkeypatch.setattr(main, "create_workflow_store", lambda: object())
+    monkeypatch.setattr(main, "WorkflowWorker", NoOpWorkflowWorker)
     with TestClient(main.app) as client:
         yield client
 
@@ -365,13 +379,29 @@ def test_hybrid_endpoint_retrieves_policy_evidence_before_agent(
         ]
 
 
-def test_agent_endpoint_sanitizes_dependency_errors(api_client, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("provider_status", "expected_status", "expected_detail"),
+    [
+        (502, 502, "Claims agent dependency failed"),
+        (429, 429, "Claims agent rate limited"),
+    ],
+)
+def test_agent_endpoint_sanitizes_dependency_errors(
+    api_client,
+    monkeypatch,
+    provider_status: int,
+    expected_status: int,
+    expected_detail: str,
+) -> None:
     class FailingAgent:
         def __init__(self, **kwargs) -> None:
             pass
 
         def investigate(self, request):
-            raise main.AgentDependencyError("provider secret detail")
+            raise main.AgentDependencyError(
+                "provider secret detail",
+                status_code=provider_status,
+            )
 
     monkeypatch.setattr(main, "ClaimsAgent", FailingAgent)
     response = api_client.post(
@@ -379,8 +409,8 @@ def test_agent_endpoint_sanitizes_dependency_errors(api_client, monkeypatch) -> 
         json={"claim_id": "CL-123", "narrative": "Water entered the home overnight."},
     )
 
-    assert response.status_code == 502
-    assert response.json()["detail"] == "Claims agent dependency failed"
+    assert response.status_code == expected_status
+    assert response.json()["detail"] == expected_detail
     assert "provider secret" not in response.text
 
 

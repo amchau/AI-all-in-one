@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -144,3 +144,133 @@ class HybridClaimsInvestigationOutput(BaseModel):
         elif self.policy_evidence_unavailable_reason is not None:
             raise ValueError("available policy evidence cannot have an unavailable reason")
         return self
+
+
+class ClaimsWorkflowCreateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    claim_id: str = Field(
+        min_length=1,
+        max_length=80,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+    )
+    narrative: str = Field(min_length=5, max_length=1000)
+    guidance_as_of: date | None = None
+
+
+class ClaimsWorkflowDispositionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    disposition: Literal["continue", "request_info", "stop"]
+    expected_version: int = Field(ge=1)
+    actor_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class ClaimsWorkflowResumeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_version: int = Field(ge=1)
+    actor_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    reason: str = Field(min_length=1, max_length=300)
+    updated_narrative: str = Field(min_length=5, max_length=1000)
+
+
+class ClaimsWorkflowEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    event_id: int
+    from_state: str | None
+    state: Literal[
+        "created",
+        "investigating",
+        "awaiting_human_review",
+        "needs_more_information",
+        "completed",
+        "failed",
+        "cancelled",
+    ]
+    action: str
+    disposition: Literal["continue", "request_info", "stop"] | None
+    actor_id: str
+    reason: str
+    trace_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    created_at: datetime
+
+
+class ClaimsWorkflowSourceReference(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_id: str
+    source_type: Literal[
+        "claim",
+        "policy",
+        "customer",
+        "payment",
+        "fraud_signal",
+        "policy_evidence",
+    ]
+
+
+class ClaimsWorkflowInvestigationSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claim_id: str
+    status: Literal["answered", "insufficient_evidence"]
+    summary: str
+    summary_source_ids: list[str]
+    findings: list[InvestigationFinding]
+    unresolved_questions: list[str]
+    sources: list[ClaimsWorkflowSourceReference]
+    model: str
+    tool_calls: int
+    latency_ms: int
+    trace_id: str | None
+
+
+class ClaimsWorkflowResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claim_id: str
+    policy_id: str
+    loss_date: date
+    guidance_as_of: date
+    policy_evidence_status: Literal[
+        "retrieved",
+        "insufficient_evidence",
+        "unavailable",
+    ]
+    policy_evidence_unavailable_reason: Literal[
+        "retrieval_dependency_failed",
+        "source_selection_failed",
+    ] | None
+    investigation: ClaimsWorkflowInvestigationSummary
+    risk_assessment: HybridRiskAssessment
+    latency_ms: int
+    trace_id: str | None
+
+
+class ClaimsWorkflowStatusOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: str
+    claim_id: str
+    state: Literal[
+        "created",
+        "investigating",
+        "awaiting_human_review",
+        "needs_more_information",
+        "completed",
+        "failed",
+        "cancelled",
+    ]
+    version: int = Field(ge=0)
+    created_at: datetime
+    updated_at: datetime
+    error_code: Literal[
+        "stage6_dependency_failed",
+        "stage6_response_invalid",
+        "worker_interrupted",
+    ] | None
+    result: ClaimsWorkflowResult | None
+    history: list[ClaimsWorkflowEvent] = Field(default_factory=list)

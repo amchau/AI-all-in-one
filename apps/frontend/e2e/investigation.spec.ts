@@ -46,17 +46,24 @@ const answeredBrief = {
 };
 
 const requestPath = "**/api/v1/claims/hybrid-investigations";
+const workflowPath = "**/api/v1/claims/workflows**";
 
-test("development proxy exposes only the hybrid claims route", async ({ request }) => {
+test("development proxy exposes only the approved claims routes", async ({ request }) => {
   for (const path of [
     "/api",
     "/api/v1/investigate",
     "/api/v1/rag/query",
     "/api/v1/investigations",
+    "/api/v1/claims/workflows-extra",
   ]) {
     const response = await request.get(path);
     expect(response.status(), path).toBe(404);
   }
+
+  const workflowPathResponse = await request.get(
+    "/api/v1/claims/workflows/11111111-1111-4111-8111-111111111111",
+  );
+  expect(workflowPathResponse.status()).not.toBe(404);
 });
 
 async function completeClaimForm(page: import("@playwright/test").Page): Promise<void> {
@@ -119,4 +126,77 @@ test("handler sees abstention and dependency errors as separate states", async (
     "The investigation service is unavailable. Try again later.",
   );
   await expect(page.getByText("private provider detail")).toHaveCount(0);
+});
+
+test("handler can reload a workflow and submit a persisted human disposition", async ({ page }) => {
+  let state = "created";
+  const workflowId = "11111111-1111-4111-8111-111111111111";
+  const result = {
+    claim_id: "CL-123",
+    policy_id: "HOME-002",
+    loss_date: "2025-03-01",
+    guidance_as_of: "2025-03-01",
+    policy_evidence_status: "retrieved",
+    policy_evidence_unavailable_reason: null,
+    investigation: {
+      claim_id: "CL-123",
+      status: "answered",
+      summary: "Flood cover is subject to limits.",
+      summary_source_ids: ["policy_evidence:chunk-1"],
+      findings: [{ text: "Schedule applicability requires confirmation.", source_ids: ["policy_evidence:chunk-1"] }],
+      unresolved_questions: ["Is the extension on the schedule?"],
+      sources: [{ source_id: "policy_evidence:chunk-1", source_type: "policy_evidence" }],
+      model: "test-model",
+      tool_calls: 2,
+      latency_ms: 120,
+      trace_id: "f8b71e2420453174714c9aed94a0d4ea",
+    },
+    risk_assessment: answeredBrief.risk_assessment,
+    latency_ms: 120,
+    trace_id: "f8b71e2420453174714c9aed94a0d4ea",
+  };
+  const response = () => ({
+    workflow_id: workflowId,
+    claim_id: "CL-123",
+    state,
+    version: state === "created" ? 0 : state === "awaiting_human_review" ? 2 : 3,
+    created_at: "2026-10-09T10:00:00Z",
+    updated_at: "2026-10-09T10:00:05Z",
+    error_code: null,
+    result: state === "awaiting_human_review" || state === "completed" ? result : null,
+    history: [],
+  });
+
+  await page.route(workflowPath, async (route) => {
+    const method = route.request().method();
+    if (method === "POST" && route.request().url().endsWith("/workflows")) {
+      state = "awaiting_human_review";
+      await route.fulfill({ status: 202, json: response() });
+      return;
+    }
+    if (method === "POST" && route.request().url().endsWith("/dispositions")) {
+      state = "completed";
+      await route.fulfill({ status: 200, json: response() });
+      return;
+    }
+    await route.fulfill({ status: 200, json: response() });
+  });
+
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Approval workflow" }).click();
+  await completeClaimForm(page);
+  await page.getByRole("button", { name: /create workflow/i }).click();
+
+  await expect(page.getByText("Flood cover is subject to limits.")).toBeVisible();
+  await expect(page.getByText(/not a claim decision/i)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("claims-workflow-id")))
+    .toBe(workflowId);
+
+  await page.reload();
+  await page.getByRole("tab", { name: "Approval workflow" }).click();
+  await expect(page.getByText("Flood cover is subject to limits.")).toBeVisible();
+  await page.getByLabel("Review reason").fill("Continue review");
+  await page.getByRole("button", { name: /continue workflow/i }).click();
+  await expect(page.getByRole("heading", { name: "Workflow completed" })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.length)).toBe(1);
 });
