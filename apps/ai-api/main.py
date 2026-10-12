@@ -22,6 +22,7 @@ from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.metrics import set_meter_provider
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -67,6 +68,7 @@ from rag.retrieval.sources import (
 )
 from workflow_store import WorkflowConflict, WorkflowNotFound, WorkflowStore
 from workflow_worker import WorkflowWorker
+from http_metrics import HttpMetricsMiddleware, HttpServerMetrics, configure_metrics
 
 
 class Settings(BaseSettings):
@@ -78,6 +80,7 @@ class Settings(BaseSettings):
 
     service_name: str = "ai-api"
     otel_exporter_otlp_endpoint: str = "http://otel-collector.ai-platform.svc.cluster.local:4318/v1/traces"
+    otel_exporter_otlp_metrics_endpoint: str = ""
 
     litellm_url: str = "http://litellm.ai-platform.svc.cluster.local:4000"
     litellm_model: str = "gpt-oss-20b"
@@ -100,6 +103,7 @@ class Settings(BaseSettings):
 settings = Settings()
 logger = logging.getLogger("ai-api")
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def setup_tracing() -> None:
@@ -114,8 +118,12 @@ def setup_tracing() -> None:
 
 
 setup_tracing()
+metrics_provider, http_metrics = configure_metrics(
+    settings.otel_exporter_otlp_metrics_endpoint,
+    settings.service_name,
+)
+set_meter_provider(metrics_provider)
 tracer = trace.get_tracer(__name__)
-HTTPXClientInstrumentor().instrument()
 _sparse_encoder_lock = Lock()
 _sparse_encoders: dict[str, FastEmbedSparseEncoder] = {}
 
@@ -252,7 +260,9 @@ def run_hybrid_investigation(request_payload: dict[str, Any]) -> dict[str, Any]:
 def sanitize_server_request_span(span: Any, scope: dict[str, Any]) -> None:
     if not span.is_recording():
         return
-    path = str(scope.get("path") or "/")
+    route = scope.get("route")
+    route_path = getattr(route, "path", None)
+    path = route_path if isinstance(route_path, str) else "/_unmatched"
     scheme = str(scope.get("scheme") or "http")
     raw_headers = scope.get("headers", [])
     headers = {
@@ -279,7 +289,58 @@ def sanitize_server_request_span(span: Any, scope: dict[str, Any]) -> None:
         span.set_attribute(name, value)
 
 
+def sanitize_client_request_span(span: Any, request: httpx.Request) -> None:
+    if not span.is_recording():
+        return
+
+    path = request.url.path
+    path_parts = path.split("/")
+    resource_path_parameters = {
+        ("v1", "claims"): "claim_id",
+        ("v1", "policies"): "policy_id",
+        ("v1", "customers"): "customer_id",
+    }
+    static_claim_routes = {"agent-investigations", "hybrid-investigations", "risk-assessments", "workflows"}
+    if (
+        len(path_parts) > 4
+        and path_parts[1:4] == ["v1", "claims", "workflows"]
+    ):
+        path_parts[4] = "{workflow_id}"
+        path = "/".join(path_parts)
+    elif (
+        len(path_parts) > 3
+        and tuple(path_parts[1:3]) in resource_path_parameters
+        and not (
+            tuple(path_parts[1:3]) == ("v1", "claims")
+            and path_parts[3] in static_claim_routes
+        )
+    ):
+        path_parts[3] = f"{{{resource_path_parameters[tuple(path_parts[1:3])]}}}"
+        path = "/".join(path_parts)
+
+    scheme = request.url.scheme
+    host = request.url.host
+    port = request.url.port
+    default_port = 443 if scheme == "https" else 80
+    netloc = f"{host}:{port}" if port and port != default_port else host
+    safe_url = f"{scheme}://{netloc}{path}"
+    for name, value in {
+        "http.target": path,
+        "http.url": safe_url,
+        "http.request.target": path,
+        "http.route": path,
+        "url.full": safe_url,
+        "url.path": path,
+        "url.query": "",
+    }.items():
+        span.set_attribute(name, value)
+
+
+HTTPXClientInstrumentor().instrument(request_hook=sanitize_client_request_span)
+
+
 app = FastAPI(title="AI API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(HttpMetricsMiddleware, metrics=http_metrics)
 FastAPIInstrumentor.instrument_app(
     app,
     server_request_hook=sanitize_server_request_span,
@@ -965,7 +1026,6 @@ def create_claim_workflow(
             raise HTTPException(status_code=503, detail="Workflow service unavailable") from error
         response.headers["Location"] = f"/v1/claims/workflows/{workflow['workflow_id']}"
         span.set_attribute("workflow.state", "created")
-        span.set_attribute("workflow.id", str(workflow["workflow_id"]))
     return workflow
 
 
@@ -985,7 +1045,6 @@ def get_claim_workflow(
         except psycopg.Error as error:
             logger.error("workflow lookup failed error_type=%s", type(error).__name__)
             raise HTTPException(status_code=503, detail="Workflow service unavailable") from error
-        span.set_attribute("workflow.id", workflow_id)
         span.set_attribute("workflow.state", workflow["state"])
         return workflow
 
@@ -1019,7 +1078,6 @@ def submit_claim_workflow_disposition(
         except psycopg.Error as error:
             logger.error("workflow decision failed error_type=%s", type(error).__name__)
             raise HTTPException(status_code=503, detail="Workflow service unavailable") from error
-        span.set_attribute("workflow.id", workflow_id)
         span.set_attribute("workflow.disposition", request.disposition)
         span.set_attribute("workflow.state", workflow["state"])
         return workflow
@@ -1054,7 +1112,6 @@ def resume_claim_workflow(
         except psycopg.Error as error:
             logger.error("workflow resume failed error_type=%s", type(error).__name__)
             raise HTTPException(status_code=503, detail="Workflow service unavailable") from error
-        span.set_attribute("workflow.id", workflow_id)
         span.set_attribute("workflow.state", workflow["state"])
         return workflow
 

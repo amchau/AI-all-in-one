@@ -55,7 +55,6 @@ class WorkflowWorker:
 
         workflow_id = workflow["workflow_id"]
         with tracer.start_as_current_span("claims.workflow_stage6") as span:
-            span.set_attribute("workflow.id", workflow_id)
             try:
                 result = self._investigator(workflow["request_payload"])
                 self._store.complete_investigation(workflow_id, result)
@@ -63,13 +62,12 @@ class WorkflowWorker:
             except AgentOutputError:
                 self._store.fail_investigation(workflow_id, "stage6_response_invalid")
                 span.set_attribute("workflow.outcome", "stage6_response_invalid")
-                logger.warning("Workflow result invalid workflow_id=%s", workflow_id)
+                logger.warning("Workflow result invalid")
             except Exception as error:
                 self._store.fail_investigation(workflow_id, "stage6_dependency_failed")
                 span.set_attribute("workflow.outcome", "stage6_dependency_failed")
                 logger.warning(
-                    "Workflow dependency failed workflow_id=%s error_type=%s",
-                    workflow_id,
+                    "Workflow dependency failed error_type=%s",
                     type(error).__name__,
                 )
         return True

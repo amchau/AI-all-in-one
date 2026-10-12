@@ -15,11 +15,12 @@ spec:
     spec:
       containers:
         - name: otel-collector
-          image: otel/opentelemetry-collector:0.133.0
+          image: otel/opentelemetry-collector:0.162.0
           args: ["--config=/etc/otelcol/otel-collector.yaml"]
           ports:
             - containerPort: 4317
             - containerPort: 4318
+            - containerPort: 9464
           resources:
             requests:
               cpu: 50m
@@ -63,3 +64,6 @@ spec:
     - name: http
       port: 4318
       targetPort: 4318
+    - name: prometheus
+      port: 9464
+      targetPort: 9464

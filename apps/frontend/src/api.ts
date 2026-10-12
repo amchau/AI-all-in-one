@@ -132,6 +132,35 @@ export type ClaimsInvestigationResponse = z.infer<typeof hybridInvestigationResp
 export type InvestigationSource = z.infer<typeof sourceSchema>;
 export type ClaimsWorkflowStatus = z.infer<typeof workflowStatusSchema>;
 export type ClaimsWorkflowDisposition = "continue" | "request_info" | "stop";
+export type ReviewerFeedbackRating = "useful" | "needs_review" | "unable_to_assess";
+export type ReviewerFeedbackReason = "grounding" | "completeness" | "relevance" | "safety" | "other";
+
+export interface ReviewerFeedbackInput {
+  rating: ReviewerFeedbackRating;
+  reason_tags?: ReviewerFeedbackReason[];
+  note?: string;
+  workflow_id?: string;
+  trace_id?: string;
+}
+
+export interface ReviewerFeedbackReceipt {
+  feedback_id: string;
+  created_at: string;
+}
+
+const feedbackReceiptSchema = z.object({
+  feedback_id: z.uuid(),
+  created_at: z.iso.datetime(),
+});
+
+const feedbackInputSchema = z.object({
+  rating: z.enum(["useful", "needs_review", "unable_to_assess"]),
+  reason_tags: z.array(z.enum(["grounding", "completeness", "relevance", "safety", "other"]))
+    .max(5).optional(),
+  note: z.string().max(500).optional(),
+  workflow_id: z.uuid().optional(),
+  trace_id: z.string().regex(/^(?!0{32})[0-9a-fA-F]{32}$/).optional(),
+}).refine((input) => !(input.workflow_id && input.trace_id));
 
 export interface ClaimsWorkflowAction {
   expected_version: number;
@@ -267,4 +296,28 @@ export function resumeClaimsWorkflow(
     },
     200,
   );
+}
+
+export async function submitReviewerFeedback(
+  input: ReviewerFeedbackInput,
+): Promise<ReviewerFeedbackReceipt> {
+  const request = feedbackInputSchema.parse(input);
+  let response: Response;
+  try {
+    response = await fetch("/api/v1/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  } catch {
+    throw new InvestigationApiError("Feedback could not be submitted. Try again later.");
+  }
+  if (!response.ok || response.status !== 201) {
+    throw new InvestigationApiError("Feedback could not be submitted. Try again later.");
+  }
+  try {
+    return feedbackReceiptSchema.parse(await response.json());
+  } catch {
+    throw new InvestigationApiError("Feedback could not be submitted. Try again later.");
+  }
 }

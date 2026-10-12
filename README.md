@@ -11,6 +11,8 @@ Current progress:
 - Stage 4 bounded claims tool-calling workflow is done for the local synthetic learning scope; API and synthetic claims-service are deployed, live RAG evidence and collector spans were exercised, and unit/integration checks pass. The reviewed evaluation documents model-quality limitations and is not a production-readiness claim. See the [Stage 4 evaluation report](docs/eval/stage4-claims-agent-report.md) and [handoff](docs/04-stage4-handoff.md).
 - Stage 5 claims risk model is done for the approved local synthetic prototype. It is advisory, routes uncertain cases to handler triage, and is not a fraud or coverage decision or a production-readiness claim. See the [Stage 5 evaluation report](docs/eval/stage5-risk-model-report.md) and [plan](docs/05-stage5-claims-risk-model-plan.md).
 - Stage 6 hybrid claims investigation is done for the user-reviewed local synthetic scope (2026-10-08): pipe and flood scenarios verified retrieval, schedule uncertainty, JSON-mode final output, separate risk advice, and correlated traces. This is not a general answer-quality or production-readiness claim. See the [Stage 6 integration report](docs/eval/stage6-hybrid-ai-report.md), [handoff](docs/06-stage6-handoff.md), [plan](docs/06-stage6-hybrid-ai-plan.md), and [ADR-013](docs/adr/ADR-013-stage6-hybrid-orchestration.md).
+- Stage 7 human approval workflow is done for the approved local synthetic scope. Restart recovery and narrative privacy gates passed; one live Stage 6 workflow smoke remains deferred and is not a Stage 8 dependency. See the [Stage 7 plan](docs/07-stage7-human-approval-plan.md).
+- Stage 8 specialist agents are deferred until concrete requirements are available. Stage 9 AI observability is done for its approved local synthetic scope, with feedback privacy/retention confirmation and aggregate suppression policy deferred. See the [Stage 9 record](docs/09-stage9-ai-observability-plan.md) and [Stage 10 draft plan](docs/10-stage10-production-platform-plan.md).
 - See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/02-stage2-rag-plan.md](docs/02-stage2-rag-plan.md), and [docs/03-stage3-claims-copilot-plan.md](docs/03-stage3-claims-copilot-plan.md).
 
 ## Stack
@@ -21,7 +23,7 @@ Current progress:
 - Frontend: React + Vite (`apps/frontend`)
 - LLM gateway: LiteLLM
 - Data services: PostgreSQL, Qdrant, MinIO
-- Observability: OpenTelemetry Collector (`debug` exporter)
+- Observability: OpenTelemetry Collector (debug traces, OTLP metrics/logs), Prometheus, Loki, Tempo, and Grafana. Services remain ClusterIP and use local port-forward only; see the [Stage 9 implementation record](docs/09-stage9-ai-observability-plan.md).
 - Ingestion: pypdf, tiktoken, LiteLLM embeddings, Qdrant, PostgreSQL, MinIO
 
 ## Prerequisites
@@ -77,10 +79,16 @@ cp .env.example .env
 ```
 
 `deploy-stage1.sh` safely parses `.env` and creates/updates Kubernetes secret `stage1-secrets`.
-The API build script creates `localhost/ai-api:stage6.0`. The ingestion Job is
+The API build script creates `localhost/ai-api:stage9.4`. The ingestion Job is
 registered but suspended during normal deployment. On a fresh database, the script defers only
 the API readiness wait while `rag_query` is absent; the API becomes ready after the query role and
 schema grants are provisioned.
+
+Stage 9 reviewer feedback uses the isolated `claims_feedback` role. Set a unique
+`POSTGRES_FEEDBACK_PASSWORD` in `.env`, run `./scripts/provision-feedback-role.sh`, set the role
+password using `\password claims_feedback` in the local `psql` session, then run
+`./scripts/deploy-stage1.sh` to refresh `claims-feedback-secrets`. Feedback remains unavailable
+until this credential is configured. Do not reuse another Postgres password.
 
 Before the first Phase 2.2 run, provision the dedicated database role, set its password in
 `.env`, and update its isolated Kubernetes secret:

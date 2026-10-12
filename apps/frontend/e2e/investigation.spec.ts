@@ -130,6 +130,7 @@ test("handler sees abstention and dependency errors as separate states", async (
 
 test("handler can reload a workflow and submit a persisted human disposition", async ({ page }) => {
   let state = "created";
+  let submittedFeedback: Record<string, unknown> | null = null;
   const workflowId = "11111111-1111-4111-8111-111111111111";
   const result = {
     claim_id: "CL-123",
@@ -181,6 +182,16 @@ test("handler can reload a workflow and submit a persisted human disposition", a
     }
     await route.fulfill({ status: 200, json: response() });
   });
+  await page.route("**/api/v1/feedback", async (route) => {
+    submittedFeedback = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 201,
+      json: {
+        feedback_id: "22222222-2222-4222-8222-222222222222",
+        created_at: "2026-10-12T10:00:00Z",
+      },
+    });
+  });
 
   await page.goto("/");
   await page.getByRole("tab", { name: "Approval workflow" }).click();
@@ -195,8 +206,32 @@ test("handler can reload a workflow and submit a persisted human disposition", a
   await page.reload();
   await page.getByRole("tab", { name: "Approval workflow" }).click();
   await expect(page.getByText("Flood cover is subject to limits.")).toBeVisible();
+  await page.getByRole("radio", { name: "Useful" }).check();
+  await page.getByRole("checkbox", { name: "Relevance" }).check();
+  await page.getByLabel(/^Optional feedback note/).fill("Clear cited response");
+  await page.getByRole("button", { name: "Submit feedback" }).click();
+  await expect(page.getByText("Feedback received.")).toBeVisible();
+  expect(submittedFeedback).toEqual({
+    rating: "useful",
+    reason_tags: ["relevance"],
+    note: "Clear cited response",
+    workflow_id: workflowId,
+  });
+  await expect(page.getByRole("region", { name: "Reviewer feedback" })).not.toContainText("Clear cited response");
   await page.getByLabel("Review reason").fill("Continue review");
   await page.getByRole("button", { name: /continue workflow/i }).click();
   await expect(page.getByRole("heading", { name: "Workflow completed" })).toBeVisible();
   expect(await page.evaluate(() => localStorage.length)).toBe(1);
+});
+
+test("offline evaluation view is distinct from live claim review", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Offline evaluations" }).click();
+
+  await expect(page.getByRole("heading", { name: "Measured synthetic runs" })).toBeVisible();
+  await expect(page.getByText("Stage 2.5 RAG comparison")).toBeVisible();
+  await expect(page.getByText("Stage 5 synthetic referral model")).toBeVisible();
+  await expect(page.getByLabel("Claim narrative")).toBeHidden();
+  await expect(page.getByText(/do not establish semantic correctness or faithfulness/i)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

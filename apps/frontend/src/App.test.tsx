@@ -8,6 +8,7 @@ import {
   createInvestigation,
   getClaimsWorkflow,
   resumeClaimsWorkflow,
+  submitReviewerFeedback,
   submitClaimsWorkflowDisposition,
 } from "./api";
 import type { ClaimsInvestigationResponse, ClaimsWorkflowStatus } from "./api";
@@ -17,6 +18,7 @@ vi.mock("./api", () => ({
   createInvestigation: vi.fn(),
   getClaimsWorkflow: vi.fn(),
   resumeClaimsWorkflow: vi.fn(),
+  submitReviewerFeedback: vi.fn(),
   submitClaimsWorkflowDisposition: vi.fn(),
 }));
 
@@ -142,6 +144,7 @@ describe("Claims evidence desk", () => {
     vi.mocked(getClaimsWorkflow).mockReset();
     vi.mocked(resumeClaimsWorkflow).mockReset();
     vi.mocked(submitClaimsWorkflowDisposition).mockReset();
+    vi.mocked(submitReviewerFeedback).mockReset();
   });
 
   afterEach(() => cleanup());
@@ -157,6 +160,17 @@ describe("Claims evidence desk", () => {
     const evidence = screen.getByRole("region", { name: "Policy evidence" });
     expect(within(evidence).getByText("Flood damage is covered subject to the stated limits.")).toBeVisible();
     expect(screen.getAllByText("Home Policy, section 4, clause 4.2, page 3")).toHaveLength(3);
+  });
+
+  it("shows offline runs as a separate view with limitations", async () => {
+    render(<App />);
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Offline evaluations" }));
+
+    expect(screen.getByRole("heading", { name: "Measured synthetic runs" })).toBeVisible();
+    expect(screen.getByText("Stage 2.5 RAG comparison")).toBeVisible();
+    expect(screen.getByText("Stage 5 synthetic referral model")).toBeVisible();
+    expect(screen.getByText(/do not establish semantic correctness or faithfulness/i)).toBeVisible();
+    expect(screen.queryByLabelText("Claim narrative")).not.toBeVisible();
   });
 
   it("renders risk advice in a distinct section from cited investigation findings", async () => {
@@ -351,6 +365,32 @@ describe("Claims evidence desk", () => {
         actor_id: "synthetic-handler-1",
       }),
     );
+  });
+
+  it("submits bounded reviewer feedback separately from workflow disposition", async () => {
+    vi.mocked(getClaimsWorkflow).mockResolvedValue(waitingWorkflow);
+    vi.mocked(submitReviewerFeedback).mockResolvedValue({
+      feedback_id: "22222222-2222-4222-8222-222222222222",
+      created_at: "2026-10-12T10:00:00Z",
+    });
+    window.localStorage.setItem("claims-workflow-id", waitingWorkflow.workflow_id);
+    render(<App />);
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Approval workflow" }));
+    expect(await screen.findByText("Review summary")).toBeVisible();
+
+    await userEvent.setup().click(screen.getByRole("radio", { name: "Needs review" }));
+    await userEvent.setup().click(screen.getByRole("checkbox", { name: "Grounding" }));
+    await userEvent.setup().type(screen.getByLabelText(/^Optional feedback note/), "Missing supporting wording");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Submit feedback" }));
+
+    expect(submitReviewerFeedback).toHaveBeenCalledWith({
+      rating: "needs_review",
+      reason_tags: ["grounding"],
+      note: "Missing supporting wording",
+      workflow_id: waitingWorkflow.workflow_id,
+    });
+    expect(await screen.findByText("Feedback received.")).toBeVisible();
+    expect(screen.queryByText("Missing supporting wording")).not.toBeInTheDocument();
   });
 
   it("loads a saved workflow ID and shows its persisted review", async () => {

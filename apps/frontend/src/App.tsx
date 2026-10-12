@@ -16,13 +16,17 @@ import {
   getClaimsWorkflow,
   resumeClaimsWorkflow,
   submitClaimsWorkflowDisposition,
+  submitReviewerFeedback,
 } from "./api";
 import type {
   ClaimsInvestigationResponse,
   ClaimsWorkflowDisposition,
   ClaimsWorkflowStatus,
   InvestigationSource,
+  ReviewerFeedbackRating,
+  ReviewerFeedbackReason,
 } from "./api";
+import { retrievalEvaluation, riskEvaluation } from "./evaluation-data";
 import { investigationRequestSchema } from "./validation";
 import type { ClaimsInvestigationRequest } from "./validation";
 
@@ -233,6 +237,150 @@ function workflowStateLabel(state: ClaimsWorkflowStatus["state"]): string {
   }
 }
 
+function ReviewerFeedback({ workflowId }: { workflowId: string }) {
+  const [rating, setRating] = useState<ReviewerFeedbackRating | "">("");
+  const [reasonTags, setReasonTags] = useState<ReviewerFeedbackReason[]>([]);
+  const [note, setNote] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  function toggleReason(reason: ReviewerFeedbackReason, checked: boolean): void {
+    setReasonTags((current) => checked
+      ? [...current, reason]
+      : current.filter((value) => value !== reason));
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!rating || pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      await submitReviewerFeedback({
+        rating,
+        reason_tags: reasonTags,
+        ...(note.trim() ? { note: note.trim() } : {}),
+        workflow_id: workflowId,
+      });
+      setNote("");
+      setReasonTags([]);
+      setSubmitted(true);
+    } catch (feedbackError: unknown) {
+      setError(feedbackError instanceof Error
+        ? feedbackError.message
+        : "Feedback could not be submitted. Try again later.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="workflow-decision reviewer-feedback" aria-label="Reviewer feedback">
+      <h3>Feedback on this review</h3>
+      {submitted ? (
+        <p role="status">Feedback received.</p>
+      ) : (
+        <form onSubmit={(event) => void submit(event)}>
+          <fieldset className="feedback-ratings">
+            <legend>Rating</legend>
+            {(["useful", "needs_review", "unable_to_assess"] as const).map((value) => (
+              <label key={value}>
+                <input
+                  type="radio"
+                  name="feedback-rating"
+                  value={value}
+                  checked={rating === value}
+                  onChange={() => setRating(value)}
+                />
+                {value === "useful" ? "Useful" : value === "needs_review" ? "Needs review" : "Unable to assess"}
+              </label>
+            ))}
+          </fieldset>
+          <fieldset className="feedback-reasons">
+            <legend>Optional reasons</legend>
+            {(["grounding", "completeness", "relevance", "safety", "other"] as const).map((value) => (
+              <label key={value}>
+                <input
+                  type="checkbox"
+                  checked={reasonTags.includes(value)}
+                  onChange={(event) => toggleReason(value, event.target.checked)}
+                />
+                {value[0].toUpperCase() + value.slice(1)}
+              </label>
+            ))}
+          </fieldset>
+          <label className="field">
+            <span>Optional feedback note</span>
+            <textarea rows={2} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+            <small>{note.length}/500</small>
+          </label>
+          <button className="submit-button" disabled={!rating || pending} type="submit">
+            {pending ? "Submitting feedback" : "Submit feedback"}
+          </button>
+        </form>
+      )}
+      {error && <p className="form-alert" role="alert">{error}</p>}
+      <p className="workflow-boundary">Feedback is stored separately from workflow disposition. Reviewer identity is not collected.</p>
+    </section>
+  );
+}
+
+function OfflineEvaluations() {
+  return (
+    <section className="brief-panel evaluation-panel" aria-labelledby="evaluation-title">
+      <div className="brief-panel-head">
+        <div>
+          <p className="panel-kicker"><span>03</span> OFFLINE EVALUATION</p>
+          <h2 id="evaluation-title">Measured synthetic runs</h2>
+        </div>
+        <span className="stage-tag">NOT LIVE HEALTH</span>
+      </div>
+      <p className="evaluation-boundary">Offline suite results only. They are separate from runtime service health and reviewer feedback.</p>
+      <section aria-labelledby="retrieval-evaluation-title" className="evaluation-section">
+        <div className="section-label">
+          <span className="section-number">01</span>
+          <h3 id="retrieval-evaluation-title">{retrievalEvaluation.suite}</h3>
+        </div>
+        <p className="evaluation-meta">Run {retrievalEvaluation.run} · {retrievalEvaluation.cases} fixed cases per mode</p>
+        <div className="evaluation-table-wrap">
+          <table className="evaluation-table">
+            <thead><tr><th>Mode</th><th>Recall@5</th><th>MRR</th><th>Citation precision</th><th>No citations</th><th>Answerability</th><th>Client p95</th><th>Failures</th></tr></thead>
+            <tbody>{retrievalEvaluation.modes.map((mode) => (
+              <tr key={mode.mode}>
+                <th scope="row">{mode.mode}</th>
+                <td>{(mode.recallAt5 * 100).toFixed(1)}%</td>
+                <td>{mode.reciprocalRank.toFixed(3)}</td>
+                <td>{(mode.citationPrecision * 100).toFixed(1)}% <small>(n={mode.citationsEvaluated})</small></td>
+                <td>{mode.noCitationResponses}/{mode.cases}</td>
+                <td>{(mode.answerabilityAccuracy * 100).toFixed(1)}%</td>
+                <td>{mode.clientLatencyP95Ms.toLocaleString()} ms</td>
+                <td>{mode.failedRequests}/{mode.cases}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <p className="evaluation-limit">{retrievalEvaluation.limitation}</p>
+      </section>
+      <section aria-labelledby="risk-evaluation-title" className="evaluation-section">
+        <div className="section-label">
+          <span className="section-number">02</span>
+          <h3 id="risk-evaluation-title">{riskEvaluation.suite}</h3>
+        </div>
+        <p className="evaluation-meta">Run {riskEvaluation.run} · {riskEvaluation.holdoutRows} holdout rows from {riskEvaluation.independentHoldoutArchetypes} archetypes</p>
+        <dl className="evaluation-metrics">
+          <div><dt>Recall</dt><dd>{(riskEvaluation.recall * 100).toFixed(1)}%</dd></div>
+          <div><dt>Precision</dt><dd>{(riskEvaluation.precision * 100).toFixed(1)}%</dd></div>
+          <div><dt>PR-AUC</dt><dd>{riskEvaluation.prAuc.toFixed(3)}</dd></div>
+          <div><dt>Review volume</dt><dd>{(riskEvaluation.reviewVolumeFraction * 100).toFixed(1)}%</dd></div>
+          <div><dt>{riskEvaluation.baselineName} precision</dt><dd>{(riskEvaluation.baselinePrecision * 100).toFixed(1)}%</dd></div>
+        </dl>
+        <p className="evaluation-limit">{riskEvaluation.limitation}</p>
+      </section>
+    </section>
+  );
+}
+
 function WorkflowPanel({
   workflow,
   loading,
@@ -383,6 +531,10 @@ function WorkflowPanel({
             </section>
           )}
 
+          {investigation && workflow.state === "awaiting_human_review" && (
+            <ReviewerFeedback workflowId={workflow.workflow_id} />
+          )}
+
           <section className="workflow-history" aria-label="Workflow history">
             <p className="eyebrow">Transition history</p>
             <ol>
@@ -404,7 +556,7 @@ function WorkflowPanel({
 export default function App() {
   const requestSequence = useRef(0);
   const autoLoadStarted = useRef(false);
-  const [view, setView] = useState<"investigation" | "workflow">("investigation");
+  const [view, setView] = useState<"investigation" | "workflow" | "evaluation">("investigation");
   const [draft, setDraft] = useState<ClaimDraft>(emptyDraft);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ClaimField, string>>>({});
   const [result, setResult] = useState<ClaimsInvestigationResponse | null>(null);
@@ -652,7 +804,7 @@ export default function App() {
         </a>
         <div className="topbar-right">
           <span className="environment-tag"><span />LOCAL SYNTHETIC DATA</span>
-          <span className="stage-tag">{view === "workflow" ? "STAGE 07" : "STAGE 06"}</span>
+          <span className="stage-tag">{view === "workflow" ? "STAGE 07" : view === "evaluation" ? "STAGE 09" : "STAGE 06"}</span>
         </div>
       </header>
 
@@ -660,11 +812,11 @@ export default function App() {
         <aside className="request-panel" aria-labelledby="request-title">
           <div className="panel-kicker"><span>01</span> {view === "workflow" ? "APPROVAL WORKFLOW" : "INVESTIGATION"}</div>
           <div className="request-heading">
-            <h1 id="request-title">{view === "workflow" ? "Start review workflow" : "New case brief"}</h1>
+            <h1 id="request-title">{view === "workflow" ? "Start review workflow" : view === "evaluation" ? "Offline evaluation" : "New case brief"}</h1>
             <p>Claims operations <span>/</span> Evidence review</p>
           </div>
 
-          <form className="claim-form" onSubmit={submit} noValidate>
+          <form className="claim-form" hidden={view === "evaluation"} onSubmit={submit} noValidate>
             <div className="field-row">
               <label className="field">
                 <span>Claim ID</span>
@@ -748,6 +900,12 @@ export default function App() {
               role="tab"
               type="button"
             >Approval workflow</button>
+            <button
+              aria-selected={view === "evaluation"}
+              onClick={() => setView("evaluation")}
+              role="tab"
+              type="button"
+            >Offline evaluations</button>
           </div>
 
           {view === "workflow" && (
@@ -769,7 +927,9 @@ export default function App() {
 
           <div className="privacy-note">
             <ShieldCheck aria-hidden="true" size={16} />
-            <span>{view === "workflow"
+            <span>{view === "evaluation"
+              ? "Offline synthetic runs only. Results are not live system health or general quality guarantees."
+              : view === "workflow"
               ? "Synthetic only. Workflow narrative is retained with the local workflow; audit and telemetry exclude it."
               : "Synthetic only. Narrative goes to hosted models (Groq/OpenRouter); the app does not save it."}</span>
           </div>
@@ -786,7 +946,9 @@ export default function App() {
           />
         )}
 
-        <section hidden={view === "workflow"} className="brief-panel" aria-labelledby="brief-panel-title" aria-live="polite">
+        {view === "evaluation" && <OfflineEvaluations />}
+
+        <section hidden={view !== "investigation"} className="brief-panel" aria-labelledby="brief-panel-title" aria-live="polite">
           <div className="brief-panel-head">
             <div>
               <p className="panel-kicker"><span>02</span> EVIDENCE REVIEW</p>

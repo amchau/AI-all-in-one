@@ -19,10 +19,26 @@ data:
     exporters:
       debug:
         verbosity: detailed
+      prometheus:
+        endpoint: 0.0.0.0:9464
+        namespace: ai_platform
+        send_timestamps: true
+      otlp_http/loki:
+        endpoint: http://loki.ai-platform.svc.cluster.local:3100/otlp
+      otlp_http/tempo:
+        endpoint: http://tempo.ai-platform.svc.cluster.local:4318
 
     service:
       pipelines:
         traces:
           receivers: [otlp]
           processors: [batch]
-          exporters: [debug]
+          exporters: [debug, otlp_http/tempo]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheus]
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp_http/loki]

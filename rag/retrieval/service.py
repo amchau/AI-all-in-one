@@ -149,10 +149,6 @@ class RagQueryService:
                     span.set_attribute("rag.mode", request.mode)
                     span.set_attribute("rag.top_k", request.top_k)
                     span.set_attribute("rag.result_count", len(chunks))
-                    span.set_attribute(
-                        "rag.candidate_doc_ids",
-                        [chunk.doc_id for chunk in chunks],
-                    )
                     _record_score_range(span, chunks)
             except Exception:
                 raise QueryDependencyError("dense search failed") from None
@@ -180,10 +176,6 @@ class RagQueryService:
                     span.set_attribute("rag.top_k", request.top_k)
                     span.set_attribute("rag.candidate_count", candidate_count)
                     span.set_attribute("rag.result_count", len(chunks))
-                    span.set_attribute(
-                        "rag.candidate_doc_ids",
-                        [chunk.doc_id for chunk in chunks],
-                    )
                     _record_score_range(span, chunks)
             except Exception:
                 raise QueryDependencyError("hybrid search failed") from None
@@ -196,14 +188,6 @@ class RagQueryService:
                         span.set_attribute("rag.reranker_model", self._reranker.model_name)
                         span.set_attribute("rag.candidate_count", candidate_count)
                         span.set_attribute("rag.result_count", len(chunks))
-                        span.set_attribute(
-                            "rag.reranked_doc_ids",
-                            [chunk.doc_id for chunk in chunks],
-                        )
-                        span.set_attribute(
-                            "rag.returned_doc_ids",
-                            [chunk.doc_id for chunk in chunks[: request.top_k]],
-                        )
                         _record_score_range(span, chunks)
                 except Exception:
                     raise QueryDependencyError("reranking failed") from None

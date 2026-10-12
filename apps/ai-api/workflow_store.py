@@ -25,6 +25,9 @@ DISPOSITION_STATES = {
 class WorkflowNotFound(Exception):
     """Raised when a workflow identifier does not exist."""
 
+    def __init__(self) -> None:
+        super().__init__("Workflow not found")
+
 
 class WorkflowConflict(ValueError):
     """Raised when a workflow transition or idempotency request conflicts."""
@@ -163,7 +166,7 @@ class WorkflowStore:
                 (workflow_id,),
             ).fetchone()
             if row is None:
-                raise WorkflowNotFound(workflow_id)
+                raise WorkflowNotFound()
             events = connection.execute(
                 sql.SQL(
                     "SELECT event_id, from_state, state, action, disposition, actor_id, "
@@ -425,7 +428,7 @@ class WorkflowStore:
             (workflow_id,),
         ).fetchone()
         if row is None:
-            raise WorkflowNotFound(workflow_id)
+            raise WorkflowNotFound()
         return row
 
     def _append_event(

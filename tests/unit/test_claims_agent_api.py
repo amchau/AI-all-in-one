@@ -76,6 +76,39 @@ def test_agent_endpoint_returns_typed_result_and_trace(api_client, monkeypatch) 
     assert len(response.json()["trace_id"]) == 32
 
 
+def test_http_metrics_record_route_template_without_claim_identifier(
+    api_client,
+    monkeypatch,
+) -> None:
+    recorded = []
+
+    class MissingWorkflowStore:
+        def get_workflow(self, workflow_id: str) -> None:
+            raise main.WorkflowNotFound()
+
+    monkeypatch.setattr(
+        main.http_metrics,
+        "record",
+        lambda **attributes: recorded.append(attributes),
+    )
+    monkeypatch.setattr(main.app.state, "workflow_store", MissingWorkflowStore())
+
+    response = api_client.get(
+        "/v1/claims/workflows/11111111-1111-4111-8111-111111111111"
+    )
+
+    assert response.status_code == 404
+    assert recorded == [
+        {
+            "method": "GET",
+            "route_template": "/v1/claims/workflows/{workflow_id}",
+            "status_code": 404,
+            "duration_seconds": recorded[0]["duration_seconds"],
+        }
+    ]
+    assert "CL-123" not in repr(recorded)
+
+
 @pytest.mark.parametrize("risk_status", [200, 503])
 def test_hybrid_endpoint_keeps_risk_advisory_separate_and_isolates_failure(
     api_client,

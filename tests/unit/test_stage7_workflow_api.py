@@ -44,7 +44,7 @@ class FakeWorkflowStore:
         if workflow_id not in self.workflows:
             from workflow_store import WorkflowNotFound
 
-            raise WorkflowNotFound(workflow_id)
+            raise WorkflowNotFound()
         return self.workflows[workflow_id]
 
     def submit_disposition(self, workflow_id: str, **kwargs) -> dict:

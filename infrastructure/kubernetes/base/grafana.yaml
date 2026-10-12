@@ -1,0 +1,209 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  namespace: ai-platform
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: stage9-prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.ai-platform.svc.cluster.local:9090
+        isDefault: true
+        editable: false
+      - name: Loki
+        uid: stage9-loki
+        type: loki
+        access: proxy
+        url: http://loki.ai-platform.svc.cluster.local:3100
+        editable: false
+      - name: Tempo
+        uid: stage9-tempo
+        type: tempo
+        access: proxy
+        url: http://tempo.ai-platform.svc.cluster.local:3200
+        editable: false
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: Stage 9
+        orgId: 1
+        folder: AI Operations
+        type: file
+        disableDeletion: true
+        editable: false
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard
+  namespace: ai-platform
+data:
+  stage9-overview.json: |
+    {
+      "title": "Stage 9 Operations",
+      "uid": "stage9-operations",
+      "schemaVersion": 41,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-1h", "to": "now"},
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "API requests per second",
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0},
+          "datasource": {"type": "prometheus", "uid": "stage9-prometheus"},
+          "targets": [{"expr": "sum(rate(ai_platform_http_server_request_count_total[5m]))", "legendFormat": "requests/s", "refId": "A"}]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "API request errors",
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0},
+          "datasource": {"type": "prometheus", "uid": "stage9-prometheus"},
+          "targets": [{"expr": "sum(rate(ai_platform_http_server_request_count_total{http_response_status_code=~\"5..\"}[5m])) or vector(0)", "legendFormat": "5xx/s", "refId": "A"}]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "API p95 request duration",
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 9},
+          "datasource": {"type": "prometheus", "uid": "stage9-prometheus"},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(ai_platform_http_server_request_duration_seconds_bucket[5m])))", "legendFormat": "p95", "refId": "A"}]
+        },
+        {
+          "id": 4,
+          "type": "logs",
+          "title": "Recent backend application logs",
+          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 27},
+          "datasource": {"type": "loki", "uid": "stage9-loki"},
+          "targets": [{"expr": "{service_name=\"kubernetes-container-logs\"}", "refId": "A"}]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "AI operations per second",
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 18},
+          "datasource": {"type": "prometheus", "uid": "stage9-prometheus"},
+          "targets": [{"expr": "sum by (ai_operation, ai_outcome) (rate(ai_platform_ai_operation_count_total[5m]))", "legendFormat": "{{ai_operation}} · {{ai_outcome}}", "refId": "A"}]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "AI operation p95 duration",
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 18},
+          "datasource": {"type": "prometheus", "uid": "stage9-prometheus"},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le, ai_operation) (rate(ai_platform_ai_operation_duration_seconds_bucket[5m])))", "legendFormat": "{{ai_operation}}", "refId": "A"}]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: ai-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: grafana/grafana:13.2.3
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "false"
+            - name: GF_ANALYTICS_REPORTING_ENABLED
+              value: "false"
+            - name: GF_PLUGINS_PREINSTALL_DISABLED
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 3000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 400m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              subPath: datasources.yaml
+              readOnly: true
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              subPath: dashboards.yaml
+              readOnly: true
+            - name: dashboard
+              mountPath: /var/lib/grafana/dashboards/stage9-overview.json
+              subPath: stage9-overview.json
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: provisioning
+          configMap:
+            name: grafana-provisioning
+        - name: dashboard
+          configMap:
+            name: grafana-dashboard
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: ai-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

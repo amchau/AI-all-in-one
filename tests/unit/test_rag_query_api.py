@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 import pytest
+import httpx
 from psycopg.conninfo import conninfo_to_dict
 
 API_MODULE_DIR = Path(__file__).resolve().parents[2] / "apps" / "ai-api"
@@ -502,21 +503,117 @@ def test_fastapi_server_span_redacts_query_string() -> None:
         def set_attribute(self, name: str, value: object) -> None:
             self.attributes[name] = value
 
+    class WorkflowRoute:
+        path = "/v1/claims/workflows/{workflow_id}"
+
     span = RecordingSpan()
     main.sanitize_server_request_span(
         span,
         {
-            "path": "/v1/investigations",
+            "path": "/v1/claims/workflows/11111111-1111-4111-8111-111111111111",
+            "route": WorkflowRoute(),
             "query_string": b"claim=CLAIM-NARRATIVE-SECRET",
             "scheme": "http",
             "headers": [(b"host", b"api.local:8000")],
         },
     )
 
-    assert span.attributes["http.target"] == "/v1/investigations"
-    assert span.attributes["http.url"] == "http://api.local:8000/v1/investigations"
+    expected_path = "/v1/claims/workflows/{workflow_id}"
+    assert span.attributes["http.target"] == expected_path
+    assert span.attributes["http.url"] == f"http://api.local:8000{expected_path}"
+    assert span.attributes["http.request.target"] == expected_path
+    assert span.attributes["url.full"] == f"http://api.local:8000{expected_path}"
+    assert span.attributes["url.path"] == expected_path
     assert span.attributes["url.query"] == ""
+    assert "11111111-1111-4111-8111-111111111111" not in repr(span.attributes)
     assert "CLAIM-NARRATIVE-SECRET" not in repr(span.attributes)
+
+
+def test_fastapi_server_span_uses_constant_for_unmatched_path() -> None:
+    class RecordingSpan:
+        def __init__(self) -> None:
+            self.attributes: dict[str, object] = {}
+
+        def is_recording(self) -> bool:
+            return True
+
+        def set_attribute(self, name: str, value: object) -> None:
+            self.attributes[name] = value
+
+    span = RecordingSpan()
+    main.sanitize_server_request_span(
+        span,
+        {
+            "path": "/private/22222222-2222-4222-8222-222222222222",
+            "query_string": b"secret=value",
+            "scheme": "http",
+            "headers": [(b"host", b"api.local:8000")],
+        },
+    )
+
+    assert span.attributes["http.target"] == "/_unmatched"
+    assert span.attributes["url.path"] == "/_unmatched"
+    assert "22222222-2222-4222-8222-222222222222" not in repr(span.attributes)
+    assert "secret=value" not in repr(span.attributes)
+
+
+@pytest.mark.parametrize(
+    ("request_path", "expected_path", "private_value"),
+    [
+        (
+            "/v1/claims/CL-123/risk-features",
+            "/v1/claims/{claim_id}/risk-features",
+            "CL-123",
+        ),
+        (
+            "/v1/claims/workflows/22222222-2222-4222-8222-222222222222",
+            "/v1/claims/workflows/{workflow_id}",
+            "22222222-2222-4222-8222-222222222222",
+        ),
+        ("/v1/policies/POL-123", "/v1/policies/{policy_id}", "POL-123"),
+        ("/v1/customers/CUST-123", "/v1/customers/{customer_id}", "CUST-123"),
+        (
+            "/v1/payments?claim_id=CL-123",
+            "/v1/payments",
+            "CL-123",
+        ),
+        (
+            "/v1/fraud-signals?claim_id=CL-123",
+            "/v1/fraud-signals",
+            "CL-123",
+        ),
+    ],
+)
+def test_httpx_client_span_redacts_identifiers_and_query(
+    request_path: str,
+    expected_path: str,
+    private_value: str,
+) -> None:
+    class RecordingSpan:
+        def __init__(self) -> None:
+            self.attributes: dict[str, object] = {}
+
+        def is_recording(self) -> bool:
+            return True
+
+        def set_attribute(self, name: str, value: object) -> None:
+            self.attributes[name] = value
+
+    span = RecordingSpan()
+    request = httpx.Request(
+        "GET",
+        f"http://claims-service.ai-platform.svc.cluster.local:8080{request_path}?private=value",
+    )
+
+    main.sanitize_client_request_span(span, request)
+
+    assert span.attributes["http.target"] == expected_path
+    assert span.attributes["http.url"] == (
+        "http://claims-service.ai-platform.svc.cluster.local:8080" + expected_path
+    )
+    assert span.attributes["url.query"] == ""
+    assert private_value not in repr(span.attributes)
+    assert "private=value" not in repr(span.attributes)
 
 
 def test_investigation_dependency_errors_remain_distinct_from_abstention(

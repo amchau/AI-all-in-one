@@ -12,6 +12,7 @@ API_MODULE_DIR = Path(__file__).resolve().parents[2] / "apps" / "ai-api"
 sys.path.insert(0, str(API_MODULE_DIR))
 
 from workflow_store import (
+    WorkflowNotFound,
     WorkflowStore,
     compact_investigation_result,
     disposition_transition,
@@ -23,6 +24,12 @@ from agents.claims.models import (
     ClaimsWorkflowDispositionInput,
     ClaimsWorkflowResumeInput,
 )
+
+
+def test_workflow_not_found_exception_has_generic_message() -> None:
+    error = WorkflowNotFound()
+
+    assert str(error) == "Workflow not found"
 
 
 def test_serialize_converts_database_uuid_to_string() -> None:

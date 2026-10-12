@@ -15,9 +15,9 @@ a measured problem, recorded in an ADR.
 | 5 | Claims risk model (synthetic human-review referral) | Decision Intelligence | Done (local synthetic prototype; not production readiness) | [05](05-stage5-claims-risk-model-plan.md), [ADR-012](adr/ADR-012-stage5-risk-model.md), [eval](eval/stage5-risk-model-report.md) |
 | 6 | Agent + ML + RAG orchestration | Hybrid AI | Done for user-reviewed local synthetic scope; limitations documented; not production-ready | [06](06-stage6-hybrid-ai-plan.md), [handoff](06-stage6-handoff.md), [eval](eval/stage6-hybrid-ai-report.md), [ADR-013](adr/ADR-013-stage6-hybrid-orchestration.md) |
 | 7 | Human approval workflow | Governed autonomy | Done for the approved local synthetic scope; recovery/privacy gates passed; live Stage 6 workflow smoke deferred and not a Stage 8 dependency | [07 plan](07-stage7-human-approval-plan.md), [ADR-007](adr/ADR-007-workflow-engine-temporal.md) |
-| 8 | Specialist agents (policy, fraud, evidence) - measured vs single agent | Multi-agent | - | - |
-| 9 | AI observability / control tower (Prometheus, Grafana, Loki, Tempo) | AI Operations | - | - |
-| 10 | Production platform: GitOps (Argo CD), Terraform, Kyverno, Vault, multi-domain | Enterprise AI Factory | - | - |
+| 8 | Specialist agents (policy, fraud, evidence) - measured vs single agent | Multi-agent | Deferred until concrete requirements are available | - |
+| 9 | AI observability / control tower (Prometheus, Grafana, Loki, Tempo) | AI Operations | Done for the approved local synthetic scope; feedback privacy/retention confirmation and aggregate-suppression decision deferred | [09](09-stage9-ai-observability-plan.md), [ADR-008](adr/ADR-008-observability-stack.md) |
+| 10 | Production platform: GitOps (Argo CD), Terraform, Kyverno, Vault, multi-domain | Enterprise AI Factory | Draft plan awaiting review; no implementation approved | [10 draft](10-stage10-production-platform-plan.md) |
 
 ## Target repo layout (grows per stage)
 
@@ -44,7 +44,7 @@ docs/          stage docs, adr/, eval/, security.md, threat-model.md
 | 005 | Claims agent implementation (plain Python vs framework) | 4 | Accepted |
 | 006 | Claims tool protocol (REST adapter vs MCP) | 4 | Accepted |
 | 007 | Stage 7 workflow engine (Postgres-backed state machine) | 7 | Accepted | [ADR-007](adr/ADR-007-workflow-engine-temporal.md) |
-| 008 | Observability stack expansion | 9 | - |
+| 008 | Observability stack expansion | 9 | Accepted | [ADR-008](adr/ADR-008-observability-stack.md) |
 | 009 | Dense RAG query contract | 2 | Accepted |
 | 010 | Hybrid retrieval and reranking contract | 2 | Accepted |
 | 011 | Stage 3 frontend framework and delivery | 3 | Accepted |

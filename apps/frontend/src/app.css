@@ -571,6 +571,137 @@ a {
   margin-bottom: 13px;
 }
 
+.reviewer-feedback h3 {
+  margin: 0 0 14px;
+  font-size: 16px;
+}
+
+.reviewer-feedback form {
+  display: grid;
+  gap: 14px;
+}
+
+.feedback-ratings,
+.feedback-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.feedback-ratings legend,
+.feedback-reasons legend {
+  width: 100%;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.feedback-ratings label,
+.feedback-reasons label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.feedback-ratings input,
+.feedback-reasons input {
+  accent-color: var(--green);
+}
+
+.evaluation-panel {
+  align-self: start;
+}
+
+.evaluation-boundary,
+.evaluation-meta,
+.evaluation-limit {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.evaluation-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.evaluation-section h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.evaluation-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.evaluation-table {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.evaluation-table th,
+.evaluation-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.evaluation-table thead th {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.evaluation-table tbody th {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.evaluation-table small {
+  color: var(--muted);
+}
+
+.evaluation-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.evaluation-metrics div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+}
+
+.evaluation-metrics dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.evaluation-metrics dd {
+  margin: 6px 0 0;
+  font-size: 19px;
+  font-weight: 650;
+}
+
+@media (max-width: 600px) {
+  .evaluation-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .workflow-actions {
   display: flex;
   flex-wrap: wrap;

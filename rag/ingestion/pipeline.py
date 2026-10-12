@@ -117,7 +117,6 @@ def _prepare_document(
     tracer = trace.get_tracer(__name__)
     document_id = str(document.metadata["doc_id"])
     with tracer.start_as_current_span("rag.parse") as span:
-        span.set_attribute("rag.doc_id", document_id)
         pages = extract_pdf_pages(document.pdf_path)
         span.set_attribute("rag.page_count", len(pages))
     with tracer.start_as_current_span("rag.chunk") as span:

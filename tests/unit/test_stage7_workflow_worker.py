@@ -1,5 +1,6 @@
 """Tests for the one-shot Stage 7 Postgres queue worker."""
 
+from contextlib import contextmanager
 from pathlib import Path
 import sys
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 API_MODULE_DIR = Path(__file__).resolve().parents[2] / "apps" / "ai-api"
 sys.path.insert(0, str(API_MODULE_DIR))
 
+import workflow_worker
 from workflow_worker import WorkflowWorker
 
 
@@ -58,3 +60,31 @@ def test_worker_marks_failure_without_retry() -> None:
     assert len(calls) == 1
     assert store.failed == [("workflow-1", "stage6_dependency_failed")]
     assert store.completed == []
+
+
+def test_worker_failure_telemetry_omits_workflow_id(caplog, monkeypatch) -> None:
+    class RecordingSpan:
+        def __init__(self) -> None:
+            self.attributes: dict[str, object] = {}
+
+        def set_attribute(self, key: str, value: object) -> None:
+            self.attributes[key] = value
+
+    span = RecordingSpan()
+
+    class RecordingTracer:
+        @contextmanager
+        def start_as_current_span(self, _name: str):
+            yield span
+
+    monkeypatch.setattr(workflow_worker, "tracer", RecordingTracer())
+    store = FakeStore()
+
+    def fail_investigation(_payload: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError("synthetic dependency failure")
+
+    worker = WorkflowWorker(store, fail_investigation)
+    assert worker.process_once() is True
+
+    assert "workflow-1" not in caplog.text
+    assert "workflow.id" not in span.attributes

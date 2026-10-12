@@ -556,21 +556,13 @@ def test_query_emits_expected_trace_spans_and_bounded_attributes(
         assert spans["rag.sparse_embed"].attributes["rag.sparse_model"] == "Qdrant/bm25"
     if "rag.rerank" in mode_specific_spans:
         assert spans["rag.rerank"].attributes["rag.reranker_model"] == "BAAI/bge-reranker-base"
-        assert list(spans["rag.search"].attributes["rag.candidate_doc_ids"]) == [
-            "POL-HOME-002-v2",
-            "END-HOME-002-WATER-LIMIT-02",
-        ]
-        assert list(spans["rag.rerank"].attributes["rag.reranked_doc_ids"]) == [
-            "END-HOME-002-WATER-LIMIT-02",
-            "POL-HOME-002-v2",
-        ]
-        assert list(spans["rag.rerank"].attributes["rag.returned_doc_ids"]) == [
-            "END-HOME-002-WATER-LIMIT-02"
-        ]
 
     for span in spans.values():
         assert "Is flood damage covered?" not in repr(span.attributes)
         assert "Flood damage is covered subject to limits." not in repr(span.attributes)
+        assert not any("doc_id" in key for key in span.attributes)
+        assert "POL-HOME-002-v2" not in repr(span.attributes)
+        assert "END-HOME-002-WATER-LIMIT-02" not in repr(span.attributes)
         assert not any(
             sensitive_key in key.lower()
             for key in span.attributes

@@ -11,6 +11,11 @@ resources:
   - litellm.yaml
   - otel-collector-configmap.yaml
   - otel-collector.yaml
+  - prometheus.yaml
+  - loki.yaml
+  - tempo.yaml
+  - grafana.yaml
+  - otel-log-agent.yaml
   - ai-api.yaml
   - claims-service.yaml
   - claims-risk-service.yaml

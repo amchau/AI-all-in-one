@@ -5,6 +5,7 @@ import {
   createClaimsWorkflow,
   getClaimsWorkflow,
   resumeClaimsWorkflow,
+  submitReviewerFeedback,
   submitClaimsWorkflowDisposition,
 } from "./api";
 import type { ClaimsInvestigationResponse } from "./api";
@@ -217,6 +218,42 @@ describe("claims workflow API client", () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response("{}", { status: 200 }));
     await expect(getClaimsWorkflow(workflowBody.workflow_id)).rejects.toThrow(
       "The workflow service returned an invalid response.",
+    );
+  });
+});
+
+describe("reviewer feedback API client", () => {
+  beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts the bounded feedback contract and validates the receipt", async () => {
+    const receipt = {
+      feedback_id: "22222222-2222-4222-8222-222222222222",
+      created_at: "2026-10-12T10:00:00Z",
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(receipt), { status: 201 }));
+
+    await expect(submitReviewerFeedback({
+      rating: "useful",
+      reason_tags: ["relevance"],
+      note: "Clear cited response",
+      workflow_id: "11111111-1111-4111-8111-111111111111",
+    })).resolves.toEqual(receipt);
+    expect(fetch).toHaveBeenCalledWith("/api/v1/feedback", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        rating: "useful",
+        reason_tags: ["relevance"],
+        note: "Clear cited response",
+        workflow_id: "11111111-1111-4111-8111-111111111111",
+      }),
+    }));
+  });
+
+  it("maps feedback failures without exposing response details", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response("private database detail", { status: 503 }));
+    await expect(submitReviewerFeedback({ rating: "useful" })).rejects.toThrow(
+      "Feedback could not be submitted. Try again later.",
     );
   });
 });

@@ -16,13 +16,15 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: ai-api
-          image: localhost/ai-api:stage6.0
+          image: localhost/ai-api:stage9.3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           env:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector.ai-platform.svc.cluster.local:4318/v1/traces
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              value: http://otel-collector.ai-platform.svc.cluster.local:4318/v1/metrics
             - name: LITELLM_URL
               value: http://litellm.ai-platform.svc.cluster.local:4000
             - name: LITELLM_MODEL
