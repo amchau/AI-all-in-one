@@ -1,0 +1,88 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-pod-hardening
+  annotations:
+    policies.kyverno.io/title: Require Container Hardening
+    policies.kyverno.io/category: Platform Baseline
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: Require non-root execution, disabled privilege escalation, and dropped Linux capabilities.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: validate-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: Privilege escalation must be disabled for every container.
+        pattern:
+          spec:
+            containers:
+              - name: "?*"
+                securityContext:
+                  allowPrivilegeEscalation: false
+            "=(initContainers)":
+              - name: "?*"
+                securityContext:
+                  allowPrivilegeEscalation: false
+            "=(ephemeralContainers)":
+              - name: "?*"
+                securityContext:
+                  allowPrivilegeEscalation: false
+
+    - name: validate-capability-drop
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: Every container must drop all Linux capabilities.
+        pattern:
+          spec:
+            containers:
+              - name: "?*"
+                securityContext:
+                  capabilities:
+                    drop:
+                      - ALL
+            "=(initContainers)":
+              - name: "?*"
+                securityContext:
+                  capabilities:
+                    drop:
+                      - ALL
+            "=(ephemeralContainers)":
+              - name: "?*"
+                securityContext:
+                  capabilities:
+                    drop:
+                      - ALL
+
+    - name: validate-nonroot
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: Every container must run as a non-root user.
+        pattern:
+          spec:
+            containers:
+              - name: "?*"
+                securityContext:
+                  runAsNonRoot: true
+            "=(initContainers)":
+              - name: "?*"
+                securityContext:
+                  runAsNonRoot: true
+            "=(ephemeralContainers)":
+              - name: "?*"
+                securityContext:
+                  runAsNonRoot: true

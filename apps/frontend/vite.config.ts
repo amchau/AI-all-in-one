@@ -11,12 +11,7 @@ export default defineConfig({
           const pathname = (request.url ?? "").split("?")[0];
           if (
             pathname === "/api"
-            || (
-              pathname.startsWith("/api/")
-              && pathname !== "/api/v1/claims/hybrid-investigations"
-              && pathname !== "/api/v1/claims/workflows"
-              && !pathname.startsWith("/api/v1/claims/workflows/")
-            )
+            || (pathname.startsWith("/api/") && pathname !== "/api/v1/claims/hybrid-investigations")
           ) {
             response.statusCode = 404;
             response.end();
@@ -30,11 +25,6 @@ export default defineConfig({
   server: {
     proxy: {
       "/api/v1/claims/hybrid-investigations": {
-        target: process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8000",
-        changeOrigin: true,
-        rewrite: (path) => path.split("?")[0].replace(/^\/api/, ""),
-      },
-      "/api/v1/claims/workflows": {
         target: process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8000",
         changeOrigin: true,
         rewrite: (path) => path.split("?")[0].replace(/^\/api/, ""),

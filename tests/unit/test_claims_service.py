@@ -19,7 +19,6 @@ def test_claims_service_exposes_typed_synthetic_domain_records() -> None:
     expected = {
         "/v1/claims/CL-123": ("claim_id", "policy_id", "customer_id"),
         "/v1/claims/CL-124": ("claim_id", "policy_id", "customer_id"),
-        "/v1/claims/CL-125": ("claim_id", "policy_id", "customer_id"),
         "/v1/policies/HOME-002": ("policy_id", "effective_date", "declared_limit"),
         "/v1/policies/COMM-001": ("policy_id", "effective_date", "declared_limit"),
         "/v1/customers/CUST-123": ("customer_id", "display_name", "contact_status"),
@@ -38,10 +37,6 @@ def test_claims_service_exposes_typed_synthetic_domain_records() -> None:
     assert fraud.json()[0]["signal_id"] == "FRD-001"
     assert CLIENT.get("/v1/payments", params={"claim_id": "CL-124"}).json() == []
     assert CLIENT.get("/v1/fraud-signals", params={"claim_id": "CL-124"}).json()[0]["signal_id"] == "FRD-002"
-    flood_claim = CLIENT.get("/v1/claims/CL-125").json()
-    assert flood_claim["policy_id"] == "HOME-002"
-    assert flood_claim["loss_date"] == "2025-03-01"
-    assert "surface-water runoff" in flood_claim["reported_event"].casefold()
 
 
 def test_claims_service_returns_not_found_without_echoing_unknown_id() -> None:
@@ -71,16 +66,6 @@ def test_claims_service_exposes_fixed_risk_features_for_known_claims() -> None:
                 "missing_required_evidence_count": 0,
                 "prior_open_claim_count": 0,
                 "estimate_limit_ratio": 0.25,
-            },
-        },
-        "CL-125": {
-            "assessment_complete": True,
-            "features": {
-                "duplicate_document_count": 0,
-                "date_inconsistency_count": 0,
-                "missing_required_evidence_count": 1,
-                "prior_open_claim_count": 0,
-                "estimate_limit_ratio": 0.5,
             },
         },
     }

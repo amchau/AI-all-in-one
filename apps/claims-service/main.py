@@ -84,17 +84,6 @@ _CLAIMS = {
         reported_event="A delivery vehicle was damaged in a loading-bay collision.",
         status="open",
     ),
-    "CL-125": ClaimRecord(
-        claim_id="CL-125",
-        policy_id="HOME-002",
-        customer_id="CUST-125",
-        loss_date=date(2025, 3, 1),
-        reported_event=(
-            "Surface-water runoff accumulated outside and entered the ground floor; "
-            "the reported water damage remains under investigation."
-        ),
-        status="under_review",
-    ),
 }
 _POLICIES = {
     "HOME-002": PolicyRecord(
@@ -122,11 +111,6 @@ _CUSTOMERS = {
         customer_id="CUST-124",
         display_name="Synthetic Customer 124",
         contact_status="unverified",
-    ),
-    "CUST-125": CustomerRecord(
-        customer_id="CUST-125",
-        display_name="Synthetic Customer 125",
-        contact_status="verified",
     ),
 }
 _PAYMENTS = {
@@ -174,13 +158,6 @@ _RISK_FEATURES = {
         missing_required_evidence_count=0,
         prior_open_claim_count=0,
         estimate_limit_ratio=0.25,
-    ),
-    "CL-125": ClaimRiskFeatures(
-        duplicate_document_count=0,
-        date_inconsistency_count=0,
-        missing_required_evidence_count=1,
-        prior_open_claim_count=0,
-        estimate_limit_ratio=0.5,
     ),
 }
 

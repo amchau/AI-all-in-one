@@ -11,3 +11,4 @@ description: Python conventions for platform services, RAG, agents and ML code.
 - Return sanitized errors to clients (`HTTPException` with generic detail); log full context server-side.
 - No LangChain/LlamaIndex/agent frameworks without an accepted ADR.
 - Pure logic (chunking, prompt assembly, scoring, fusion) stays side-effect free and unit-tested with pytest.
+- Every new or modified Python file starts with a concise module docstring explaining its purpose. Add concise comments/docstrings for meaningful responsibilities and non-obvious logic; avoid narrating obvious lines.

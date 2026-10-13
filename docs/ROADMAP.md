@@ -17,7 +17,7 @@ a measured problem, recorded in an ADR.
 | 7 | Human approval workflow | Governed autonomy | Done for the approved local synthetic scope; recovery/privacy gates passed; live Stage 6 workflow smoke deferred and not a Stage 8 dependency | [07 plan](07-stage7-human-approval-plan.md), [ADR-007](adr/ADR-007-workflow-engine-temporal.md) |
 | 8 | Specialist agents (policy, fraud, evidence) - measured vs single agent | Multi-agent | Deferred until concrete requirements are available | - |
 | 9 | AI observability / control tower (Prometheus, Grafana, Loki, Tempo) | AI Operations | Done for the approved local synthetic scope; feedback privacy/retention confirmation and aggregate-suppression decision deferred | [09](09-stage9-ai-observability-plan.md), [ADR-008](adr/ADR-008-observability-stack.md) |
-| 10 | Production platform: GitOps (Argo CD), Terraform, Kyverno, Vault, multi-domain | Enterprise AI Factory | Draft plan awaiting review; no implementation approved | [10 draft](10-stage10-production-platform-plan.md) |
+| 10 | Production platform: GitOps (Argo CD), Terraform, Kyverno, Vault, multi-domain | Enterprise AI Factory | Local-only scope approved; Kyverno offline checks implemented; Argo CD v3.5.5 experimentally installed on Kubernetes 1.37; canary sync pending private-repo credentials. Production target and second domain deferred. | [10 plan](10-stage10-production-platform-plan.md) |
 
 ## Target repo layout (grows per stage)
 
@@ -50,6 +50,8 @@ docs/          stage docs, adr/, eval/, security.md, threat-model.md
 | 011 | Stage 3 frontend framework and delivery | 3 | Accepted |
 | 012 | Stage 5 risk model and serving boundary | 5 | Accepted |
 | 013 | Stage 6 hybrid claims orchestration | 6 | Accepted |
+| 014 | Stage 10 Kyverno policy governance | 10 | Accepted for offline checks; controller deferred | [ADR-014](adr/ADR-014-stage10-kyverno-policy-governance.md) |
+| 015 | Stage 10 Argo CD local GitOps | 10 | Accepted; experimental v3.5.5 install on Kubernetes 1.37; canary sync pending | [ADR-015](adr/ADR-015-stage10-argocd-local-gitops.md) |
 
 ## Evaluation dimensions tracked from Stage 2 onward
 

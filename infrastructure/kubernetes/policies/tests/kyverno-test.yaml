@@ -1,0 +1,60 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-pod-baseline
+policies:
+  - ../require-pod-resources.yaml
+  - ../require-pod-hardening.yaml
+resources:
+  - pod-compliant.yaml
+  - pod-noncompliant.yaml
+variables:
+results:
+  - policy: require-pod-resources
+    rule: validate-resources
+    resources:
+      - pod-compliant
+    kind: Pod
+    result: pass
+  - policy: require-pod-resources
+    rule: validate-resources
+    resources:
+      - pod-noncompliant
+    kind: Pod
+    result: fail
+  - policy: require-pod-hardening
+    rule: validate-privilege-escalation
+    resources:
+      - pod-compliant
+    kind: Pod
+    result: pass
+  - policy: require-pod-hardening
+    rule: validate-privilege-escalation
+    resources:
+      - pod-noncompliant
+    kind: Pod
+    result: fail
+  - policy: require-pod-hardening
+    rule: validate-capability-drop
+    resources:
+      - pod-compliant
+    kind: Pod
+    result: pass
+  - policy: require-pod-hardening
+    rule: validate-capability-drop
+    resources:
+      - pod-noncompliant
+    kind: Pod
+    result: fail
+  - policy: require-pod-hardening
+    rule: validate-nonroot
+    resources:
+      - pod-compliant
+    kind: Pod
+    result: pass
+  - policy: require-pod-hardening
+    rule: validate-nonroot
+    resources:
+      - pod-noncompliant
+    kind: Pod
+    result: fail
